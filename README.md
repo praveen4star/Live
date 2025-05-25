@@ -1,73 +1,315 @@
 # LiveTube - RTMP Live Streaming Platform
 
-A YouTube-like live streaming platform using RTMP protocol, built with Node.js, Express, and Node-Media-Server.
+A YouTube-like live streaming platform using the RTMP protocol with Node.js, Express, and node-media-server.
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Architecture](#architecture)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+  - [Streaming with OBS](#streaming-with-obs)
+  - [Viewing Streams](#viewing-streams)
+- [API Reference](#api-reference)
+- [Troubleshooting](#troubleshooting)
+
+## Overview
+
+LiveTube is a platform that allows users to broadcast live streams using the RTMP protocol and view them in a web browser through HLS (HTTP Live Streaming). The platform provides a YouTube-like experience with a broadcaster page and a viewer page.
 
 ## Features
 
-- Live streaming using RTMP protocol
-- Stream creation with custom titles and descriptions
-- Live viewer count
-- Stream chat functionality
-- Responsive design
-- HLS streaming for cross-platform compatibility
+- **RTMP Ingest**: Accept RTMP streams from broadcasting software like OBS
+- **HLS Conversion**: Convert RTMP streams to HLS for browser playback
+- **Low Latency**: Optimized for lower latency streaming (2-5 seconds)
+- **Stream Management**: Create, view, and manage streams
+- **View Count Tracking**: Track viewer counts for each stream
+- **Responsive UI**: Mobile-friendly interface for both broadcasters and viewers
+- **Auto Test Stream**: Automatically generates a test stream for debugging
+- **Fallback Mechanism**: Falls back to test stream when a stream is not available
 
-## Prerequisites
+## Architecture
 
-- [Node.js](https://nodejs.org/) (v12 or higher)
-- [FFmpeg](https://ffmpeg.org/) (required for transcoding)
+The system consists of three main components:
+
+1. **RTMP Server** (Port 1935): Handles incoming RTMP streams from broadcasting software
+2. **HLS Server** (Port 8000): Serves HLS streams to web browsers
+3. **API Server** (Port 3000): Manages stream metadata and provides REST APIs
+
+### Data Flow
+
+```
+Broadcaster (OBS) → RTMP Server → FFmpeg Conversion → HLS Files → Web Viewers
+                                                     ↓
+                                            Stream Metadata in API
+```
 
 ## Installation
 
-1. Clone the repository
+### Prerequisites
 
-```
-git clone https://github.com/yourusername/livetube.git
-cd livetube
+- Node.js (v14 or later)
+- FFmpeg
+- NPM or Yarn
+
+### Step 1: Install FFmpeg
+
+#### macOS (using Homebrew)
+
+```bash
+brew install ffmpeg
 ```
 
-2. Install dependencies
+#### Ubuntu/Debian
 
+```bash
+apt-get install ffmpeg
 ```
+
+#### Windows
+
+Download from [FFmpeg's official website](https://ffmpeg.org/download.html)
+
+### Step 2: Clone and Install Dependencies
+
+```bash
+git clone <repository-url>
+cd LiveTube
 npm install
 ```
 
-3. Install FFmpeg (if not already installed)
-   - **macOS**: `brew install ffmpeg`
-   - **Ubuntu/Debian**: `apt-get install ffmpeg`
-   - **Windows**: Download from [ffmpeg.org](https://ffmpeg.org/download.html)
+### Step 3: Create Environment Variables (Optional)
 
-## Usage
-
-1. Start the server
+Create a `.env` file in the root directory:
 
 ```
+PORT=3000
+FFMPEG_PATH=/path/to/ffmpeg
+```
+
+### Step 4: Start the Server
+
+```bash
 npm start
 ```
 
-2. Open your browser and navigate to `http://localhost:3000`
+## Configuration
 
-3. To start streaming:
+The server's configuration is defined in `index.js`. The main configuration options are:
 
-   - Click "Go Live" in the navigation
-   - Fill in your username and stream details
-   - Copy the generated stream key and RTMP URL
-   - Open your streaming software (OBS, Streamlabs, etc.)
-   - Set up a custom stream with the RTMP URL and stream key
-   - Start streaming in your software
+### RTMP Server Configuration
 
-4. To watch streams:
-   - Navigate to the home page
-   - Click on any live stream to watch
+```javascript
+const rtmpConfig = {
+  rtmp: {
+    port: 1935,
+    chunk_size: 60000,
+    gop_cache: true,
+    ping: 30,
+    ping_timeout: 60,
+  },
+  http: {
+    port: 8000,
+    mediaroot: "./media",
+    allow_origin: "*",
+    api: true,
+  },
+  auth: {
+    api: false,
+    play: false,
+    publish: false,
+  },
+  trans: {
+    ffmpeg: "/opt/homebrew/bin/ffmpeg", // Path to FFmpeg
+    tasks: [
+      {
+        app: "live",
+        hls: true,
+        hlsFlags:
+          "[hls_time=2:hls_list_size=5:hls_flags=delete_segments+append_list]",
+        hlsKeep: false,
+        mp4: false,
+        dash: false,
+      },
+    ],
+  },
+  relay: {
+    ffmpeg: "/opt/homebrew/bin/ffmpeg",
+    tasks: [
+      {
+        app: "live",
+        mode: "push",
+        edge: "rtmp://localhost:1935/live/test",
+        id: "test_stream",
+        relay_audio: true,
+        relay_video: true,
+      },
+    ],
+  },
+};
+```
 
-## Streaming Software Setup (OBS Studio)
+### HLS Configuration
+
+- **hls_time**: Duration of each segment in seconds (default: 2)
+- **hls_list_size**: Number of segments to keep in the playlist (default: 5)
+- **hlsFlags**: Additional FFmpeg flags for HLS generation
+  - `delete_segments`: Delete old segments automatically
+  - `append_list`: Append to playlist instead of overwriting
+
+## Usage
+
+### Streaming with OBS
 
 1. Open OBS Studio
 2. Go to Settings > Stream
-3. Select "Custom" for Service
-4. Enter the RTMP URL (`rtmp://localhost:1935/live`) in the Server field
-5. Enter your stream key in the Stream Key field
+3. Set Service to "Custom..."
+4. Set Server to `rtmp://localhost:1935/live`
+5. Set Stream Key to a unique identifier (e.g., `mystream`)
 6. Click "Apply" and "OK"
 7. Click "Start Streaming" in the main OBS window
+
+### Creating a Stream via Web Interface
+
+1. Visit `http://localhost:3000/broadcast.html` in your browser
+2. Enter a stream title, description, and username
+3. Click "Create Stream"
+4. Use the displayed Stream Key in your broadcasting software
+
+### Viewing Streams
+
+1. Visit `http://localhost:3000` to see all active streams
+2. Click on a stream to watch it
+3. Alternatively, visit `http://localhost:3000/watch.html?key=STREAM_KEY` directly
+
+## API Reference
+
+### Stream Management
+
+#### Get All Streams
+
+```
+GET /api/streams
+```
+
+#### Get a Specific Stream
+
+```
+GET /api/streams/:streamKey
+```
+
+#### Create a New Stream
+
+```
+POST /api/streams
+Body: {
+  "title": "Stream Title",
+  "description": "Stream Description",
+  "streamKey": "unique_stream_key",
+  "username": "broadcaster_name"
+}
+```
+
+#### Mark a Stream as Live
+
+```
+PUT /api/streams/:streamKey/live
+```
+
+#### Increment View Count
+
+```
+PUT /api/streams/:streamKey/view
+```
+
+#### End a Stream
+
+```
+DELETE /api/streams/:streamKey
+```
+
+### Test Stream Generation
+
+#### Generate a Test Stream
+
+```
+GET /api/generate-test-stream
+```
+
+## HLS URLs
+
+The HLS streams are available at:
+
+```
+http://localhost:8000/live/{streamKey}/index.m3u8
+```
+
+A test stream is always available at:
+
+```
+http://localhost:8000/live/test/index.m3u8
+```
+
+## Troubleshooting
+
+### Common Issues
+
+#### "FFmpeg not found" error
+
+- Ensure FFmpeg is installed and the path in the configuration is correct
+- Run `which ffmpeg` to find the correct path on your system
+
+#### Stream Not Showing Up
+
+- Check OBS settings to ensure the RTMP URL and stream key are correct
+- Verify the stream appears in `GET /api/streams` response
+- Check for FFmpeg errors in the server logs
+
+#### High Latency
+
+- Adjust the HLS settings in the RTMP configuration:
+  - Reduce `hls_time` to 1-2 seconds
+  - Reduce `hls_list_size` to 3-5 segments
+  - Add `low_latency` flag to `hlsFlags`
+
+#### Missing Segments or Playback Issues
+
+- Ensure your HLS directories have proper write permissions
+- Verify FFmpeg is generating segments correctly
+- Check browser console for playback errors
+- Use the test stream to verify the pipeline is working
+
+### Verifying HLS Generation
+
+To check if HLS segments are being generated:
+
+1. Start streaming with OBS
+2. Check the directory: `media/live/{streamKey}/`
+3. You should see an `index.m3u8` file and several `.ts` segment files
+4. If no files appear, check server logs for FFmpeg errors
+
+### Fallback to Test Stream
+
+The system will automatically fall back to the test stream if:
+
+1. The requested stream is not found
+2. The stream has ended
+3. There are playback errors with the main stream
+
+You can manually access the test stream at any time by visiting:
+
+```
+http://localhost:3000/watch.html?key=test
+```
+
+## Performance Considerations
+
+- HLS segment duration affects latency and playback stability
+- Shorter segments reduce latency but can cause more buffering
+- The default configuration balances latency (2-5 seconds) and stability
+- For production deployments, consider using a CDN for HLS delivery
 
 ## Technologies Used
 
