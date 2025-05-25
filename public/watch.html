@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Watch Stream - LiveTube</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+    <link
+      href="https://unpkg.com/video.js@8.10.0/dist/video-js.css"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <header>
+      <div class="logo">
+        <h1>LiveTube</h1>
+      </div>
+      <nav>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="broadcast.html">Go Live</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <main>
+      <section class="stream-viewer">
+        <div id="stream-info-container">
+          <h2 id="stream-title">Loading...</h2>
+          <p id="stream-description"></p>
+          <div class="stream-meta">
+            <span id="stream-username"></span>
+            <span id="view-count">0 viewers</span>
+          </div>
+        </div>
+
+        <div class="video-container">
+          <video
+            id="video-player"
+            class="video-js vjs-big-play-centered"
+            controls
+            preload="auto"
+            width="640"
+            height="360"
+            data-setup="{}"
+          >
+            <p class="vjs-no-js">
+              To view this video please enable JavaScript, and consider
+              upgrading to a web browser that supports HTML5 video
+            </p>
+          </video>
+        </div>
+
+        <div class="chat-container">
+          <div class="chat-header">
+            <h3>Live Chat</h3>
+          </div>
+          <div class="chat-messages" id="chat-messages">
+            <!-- Chat messages will be loaded here dynamically -->
+          </div>
+          <div class="chat-input">
+            <input
+              type="text"
+              id="chat-message"
+              placeholder="Send a message..."
+            />
+            <button id="send-message" class="btn-small">Send</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2023 LiveTube - RTMP Live Streaming Platform</p>
+    </footer>
+
+    <script src="https://unpkg.com/video.js@8.10.0/dist/video.min.js"></script>
+    <script src="js/watch.js"></script>
+  </body>
+</html>

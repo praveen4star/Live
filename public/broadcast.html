@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Go Live - LiveTube</title>
+    <link rel="stylesheet" href="css/style.css" />
+    <link
+      rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css"
+    />
+  </head>
+  <body>
+    <header>
+      <div class="logo">
+        <h1>LiveTube</h1>
+      </div>
+      <nav>
+        <ul>
+          <li><a href="index.html">Home</a></li>
+          <li><a href="broadcast.html" class="active">Go Live</a></li>
+        </ul>
+      </nav>
+    </header>
+
+    <main>
+      <section class="broadcast-setup">
+        <h2>Start Streaming</h2>
+
+        <div class="broadcast-container">
+          <div class="broadcast-form">
+            <form id="stream-form">
+              <div class="form-group">
+                <label for="username">Username</label>
+                <input type="text" id="username" required />
+              </div>
+              <div class="form-group">
+                <label for="title">Stream Title</label>
+                <input type="text" id="title" required />
+              </div>
+              <div class="form-group">
+                <label for="description">Description</label>
+                <textarea id="description" rows="3"></textarea>
+              </div>
+              <div class="form-group">
+                <button type="submit" class="btn">Create Stream</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="broadcast-info hidden" id="stream-info">
+            <h3>Stream Information</h3>
+            <div class="info-group">
+              <label>Stream Status:</label>
+              <span id="stream-status">Not Live</span>
+            </div>
+            <div class="info-group">
+              <label>Stream Key:</label>
+              <div class="stream-key-container">
+                <input type="password" id="stream-key" readonly />
+                <button id="show-key" class="btn-small">
+                  <i class="fas fa-eye"></i>
+                </button>
+                <button id="copy-key" class="btn-small">
+                  <i class="fas fa-copy"></i>
+                </button>
+              </div>
+            </div>
+            <div class="info-group">
+              <label>RTMP URL:</label>
+              <input
+                type="text"
+                id="rtmp-url"
+                value="rtmp://localhost:1935/live"
+                readonly
+              />
+              <button id="copy-url" class="btn-small">
+                <i class="fas fa-copy"></i>
+              </button>
+            </div>
+            <div class="stream-instructions">
+              <h4>How to Stream:</h4>
+              <ol>
+                <li>Copy your Stream Key and RTMP URL</li>
+                <li>Open OBS Studio or your preferred streaming software</li>
+                <li>Set the Stream Type to "Custom"</li>
+                <li>Paste the RTMP URL and Stream Key</li>
+                <li>Click "Start Streaming" in your software</li>
+              </ol>
+            </div>
+            <div class="form-group">
+              <button id="end-stream" class="btn btn-danger">End Stream</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p>&copy; 2023 LiveTube - RTMP Live Streaming Platform</p>
+    </footer>
+
+    <script src="js/broadcast.js"></script>
+  </body>
+</html>
