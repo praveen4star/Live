@@ -378,7 +378,7 @@ test2.ts
   fs.writeFileSync(indexFile, testContent);
 
   // Generate sample TS segments using ffmpeg
-  const ffmpegCmd = `/opt/homebrew/bin/ffmpeg -f lavfi -i testsrc=duration=12:size=640x360:rate=30 -f lavfi -i sine=frequency=1000:duration=12 -c:v libx264 -c:a aac -pix_fmt yuv420p -f hls -hls_time=4 -hls_playlist_type vod -hls_segment_filename "${testDir}/test%d.ts" "${testDir}/index.m3u8"`;
+  const ffmpegCmd = `/opt/homebrew/bin/ffmpeg -f lavfi -i testsrc=duration=12:size=640x360:rate=30 -f lavfi -i sine=frequency=1000:duration=12 -c:v libx264 -c:a aac -pix_fmt yuv420p -f hls -hls_time 4 -hls_playlist_type vod -hls_segment_filename "${testDir}/test%d.ts" "${testDir}/index.m3u8"`;
 
   exec(ffmpegCmd, (error, stdout, stderr) => {
     if (error) {
@@ -445,7 +445,7 @@ test2.ts
   fs.writeFileSync(indexFile, testContent);
 
   // Generate sample TS segments using ffmpeg
-  const ffmpegCmd = `/opt/homebrew/bin/ffmpeg -f lavfi -i testsrc=duration=12:size=640x360:rate=30 -f lavfi -i sine=frequency=1000:duration=12 -c:v libx264 -c:a aac -pix_fmt yuv420p -f hls -hls_time=4 -hls_playlist_type vod -hls_segment_filename "${testDir}/test%d.ts" "${testDir}/index.m3u8"`;
+  const ffmpegCmd = `/opt/homebrew/bin/ffmpeg -f lavfi -i testsrc=duration=12:size=640x360:rate=30 -f lavfi -i sine=frequency=1000:duration=12 -c:v libx264 -c:a aac -pix_fmt yuv420p -f hls -hls_time 4 -hls_playlist_type vod -hls_segment_filename "${testDir}/test%d.ts" "${testDir}/index.m3u8"`;
 
   exec(ffmpegCmd, (error, stdout, stderr) => {
     if (error) {
