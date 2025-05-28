@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DASH Test Player</title>
+    <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        padding: 0;
+        background-color: #f5f5f5;
+      }
+      h1 {
+        color: #333;
+      }
+      .player-container {
+        max-width: 800px;
+        margin: 20px auto;
+        background: white;
+        padding: 20px;
+        border-radius: 5px;
+        box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+      }
+      video {
+        width: 100%;
+        height: auto;
+        background: #000;
+      }
+      .controls {
+        margin: 20px 0;
+        padding: 10px;
+        background: #eee;
+        border-radius: 5px;
+      }
+      button {
+        padding: 8px 15px;
+        margin: 5px;
+        background: #4caf50;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #45a049;
+      }
+      #status {
+        margin-top: 10px;
+        padding: 10px;
+        background: #f8f8f8;
+        border-left: 4px solid #2196f3;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="player-container">
+      <h1>DASH Test Player</h1>
+
+      <video id="videoPlayer" controls></video>
+
+      <div class="controls">
+        <button id="loadDash">Load DASH Stream</button>
+        <button id="reloadDash">Reload Player</button>
+        <input
+          type="text"
+          id="dashUrl"
+          value="http://localhost:8080/live/stream.mpd"
+          style="width: 300px"
+        />
+      </div>
+
+      <div id="status">Status: Ready</div>
+    </div>
+
+    <script>
+      let player = null;
+
+      function initDashPlayer() {
+        if (player) {
+          player.reset();
+        }
+
+        const video = document.getElementById("videoPlayer");
+        const url = document.getElementById("dashUrl").value;
+        const status = document.getElementById("status");
+
+        status.innerHTML = `Status: Initializing DASH player with URL: ${url}`;
+
+        player = dashjs.MediaPlayer().create();
+
+        player.updateSettings({
+          debug: {
+            logLevel: dashjs.Debug.LOG_LEVEL_INFO,
+          },
+          streaming: {
+            buffer: {
+              bufferTimeAtTopQuality: 30,
+              bufferTimeAtTopQualityLongForm: 60,
+            },
+            liveCatchup: {
+              enabled: true,
+              maxDrift: 30,
+              playbackRate: {
+                min: 0.5,
+                max: 1.5,
+              },
+            },
+          },
+        });
+
+        player.initialize(video, url, true);
+
+        player.on(dashjs.MediaPlayer.events.ERROR, function (e) {
+          console.error("DASH Player Error:", e);
+          status.innerHTML = `Status: Error: ${
+            e.error ? e.error.message : "Unknown error"
+          }`;
+        });
+
+        player.on(dashjs.MediaPlayer.events.MANIFEST_LOADED, function () {
+          status.innerHTML = "Status: Manifest loaded successfully";
+        });
+
+        player.on(dashjs.MediaPlayer.events.PLAYBACK_STARTED, function () {
+          status.innerHTML = "Status: Playback started";
+        });
+      }
+
+      document
+        .getElementById("loadDash")
+        .addEventListener("click", initDashPlayer);
+
+      document
+        .getElementById("reloadDash")
+        .addEventListener("click", function () {
+          if (player) {
+            player.reset();
+            player = null;
+          }
+          initDashPlayer();
+        });
+    </script>
+  </body>
+</html>

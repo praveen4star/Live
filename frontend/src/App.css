@@ -1,0 +1,67 @@
+.App {
+  min-height: 100vh;
+}
+
+.stream-key-container {
+  background-color: #f8f9fa;
+  padding: 20px;
+  border-radius: 5px;
+  margin-bottom: 20px;
+}
+
+.stream-key {
+  font-family: monospace;
+  padding: 10px;
+  background-color: #e9ecef;
+  border-radius: 4px;
+  word-break: break-all;
+}
+
+.video-container {
+  width: 100%;
+  background-color: #000;
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  margin-bottom: 20px;
+}
+
+.video-player {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background-color: #000;
+}
+
+.stream-instructions {
+  margin-top: 20px;
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-radius: 5px;
+}
+
+.stream-instructions pre {
+  background-color: #e9ecef;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.format-selector {
+  margin-bottom: 15px;
+}
+
+.stream-status {
+  padding: 10px 15px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-bottom: 15px;
+}
+
+.stream-status.live {
+  background-color: #dc3545;
+  color: white;
+}
+
+.stream-status.offline {
+  background-color: #6c757d;
+  color: white;
+}

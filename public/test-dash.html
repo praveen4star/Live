@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>DASH Test Player - Live Streaming Project</title>
+    <script src="https://cdn.dashjs.org/latest/dash.all.min.js"></script>
+    <style>
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+          Oxygen, Ubuntu, Cantarell, "Open Sans", "Helvetica Neue", sans-serif;
+        margin: 0;
+        padding: 0;
+        background-color: #f5f5f5;
+        color: #333;
+      }
+      .container {
+        max-width: 900px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      header {
+        background: #3f51b5;
+        color: white;
+        padding: 15px 20px;
+        border-radius: 5px 5px 0 0;
+      }
+      h1 {
+        margin: 0;
+        font-size: 24px;
+      }
+      .player-container {
+        background: white;
+        padding: 20px;
+        border-radius: 0 0 5px 5px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        margin-bottom: 20px;
+      }
+      video {
+        width: 100%;
+        height: auto;
+        background: #000;
+        border-radius: 5px;
+      }
+      .controls {
+        margin: 20px 0;
+        padding: 15px;
+        background: #f9f9f9;
+        border-radius: 5px;
+        border: 1px solid #eee;
+      }
+      .url-input {
+        display: flex;
+        margin-bottom: 15px;
+      }
+      input[type="text"] {
+        flex: 1;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        font-size: 14px;
+      }
+      button {
+        padding: 10px 15px;
+        margin-right: 10px;
+        background: #3f51b5;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: background 0.2s;
+      }
+      button:hover {
+        background: #303f9f;
+      }
+      .status-panel {
+        margin-top: 20px;
+      }
+      .status {
+        padding: 12px;
+        background: #f8f8f8;
+        border-left: 4px solid #3f51b5;
+        margin-bottom: 10px;
+      }
+      .error {
+        border-left-color: #f44336;
+        background-color: #ffebee;
+      }
+      .success {
+        border-left-color: #4caf50;
+        background-color: #e8f5e9;
+      }
+      .info-panel {
+        background: white;
+        padding: 20px;
+        border-radius: 5px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .info-panel h2 {
+        margin-top: 0;
+        font-size: 18px;
+        color: #3f51b5;
+      }
+      .url-list {
+        background: #f9f9f9;
+        padding: 15px;
+        border-radius: 5px;
+        font-family: monospace;
+        font-size: 14px;
+      }
+      .url-list div {
+        margin-bottom: 8px;
+      }
+      .code {
+        font-family: monospace;
+        background: #f5f5f5;
+        padding: 2px 4px;
+        border-radius: 3px;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <header>
+        <h1>DASH Test Player - Live Streaming Project</h1>
+      </header>
+
+      <div class="player-container">
+        <video id="videoPlayer" controls></video>
+
+        <div class="controls">
+          <div class="url-input">
+            <input
+              type="text"
+              id="dashUrl"
+              value="http://localhost:8080/live/stream.mpd"
+            />
+          </div>
+          <button id="loadDash">Load DASH Stream</button>
+          <button id="reloadDash">Reload Player</button>
+        </div>
+
+        <div class="status-panel">
+          <div id="status" class="status">Ready to play DASH stream</div>
+          <div id="error" class="status error" style="display: none"></div>
+        </div>
+      </div>
+
+      <div class="info-panel">
+        <h2>DASH Stream Information</h2>
+        <div id="stream-info">Not loaded yet</div>
+
+        <h2>DASH URLs for Testing</h2>
+        <div class="url-list">
+          <div>
+            MPD: <span class="code">http://localhost:8080/live/stream.mpd</span>
+          </div>
+          <div>
+            Video Init:
+            <span class="code">http://localhost:8080/live/stream-init.mp4</span>
+          </div>
+          <div>
+            Audio Init:
+            <span class="code"
+              >http://localhost:8080/live/stream-audio-init.mp4</span
+            >
+          </div>
+          <div>
+            Video Segment:
+            <span class="code">http://localhost:8080/live/stream-1.m4s</span>
+          </div>
+          <div>
+            Audio Segment:
+            <span class="code"
+              >http://localhost:8080/live/stream-audio-1.m4s</span
+            >
+          </div>
+        </div>
+
+        <h2>Troubleshooting</h2>
+        <ul>
+          <li>Make sure the SRS server is running</li>
+          <li>Check that an RTMP stream is publishing to the server</li>
+          <li>Verify that the DASH files are being generated correctly</li>
+          <li>Inspect browser network requests for any 404 errors</li>
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      let player = null;
+      const videoElement = document.getElementById("videoPlayer");
+      const urlInput = document.getElementById("dashUrl");
+      const statusElement = document.getElementById("status");
+      const errorElement = document.getElementById("error");
+      const streamInfoElement = document.getElementById("stream-info");
+
+      function showStatus(message, type = "info") {
+        statusElement.textContent = message;
+        statusElement.className = "status";
+        if (type === "error") {
+          statusElement.classList.add("error");
+        } else if (type === "success") {
+          statusElement.classList.add("success");
+        }
+      }
+
+      function showError(message) {
+        errorElement.textContent = message;
+        errorElement.style.display = "block";
+      }
+
+      function hideError() {
+        errorElement.style.display = "none";
+      }
+
+      function updateStreamInfo(info) {
+        if (!info) {
+          streamInfoElement.textContent = "No stream information available";
+          return;
+        }
+
+        let html = '<table style="width:100%; border-collapse: collapse;">';
+        if (info.manifestInfo) {
+          html += `<tr><td style="padding:8px;border-bottom:1px solid #eee;"><strong>Duration:</strong></td><td style="padding:8px;border-bottom:1px solid #eee;">${
+            info.manifestInfo.duration || "Live"
+          }</td></tr>`;
+          html += `<tr><td style="padding:8px;border-bottom:1px solid #eee;"><strong>Type:</strong></td><td style="padding:8px;border-bottom:1px solid #eee;">${
+            info.manifestInfo.type || "Unknown"
+          }</td></tr>`;
+        }
+
+        if (info.videoInfo) {
+          html += `<tr><td style="padding:8px;border-bottom:1px solid #eee;"><strong>Video Codec:</strong></td><td style="padding:8px;border-bottom:1px solid #eee;">${
+            info.videoInfo.codec || "Unknown"
+          }</td></tr>`;
+          html += `<tr><td style="padding:8px;border-bottom:1px solid #eee;"><strong>Resolution:</strong></td><td style="padding:8px;border-bottom:1px solid #eee;">${
+            info.videoInfo.width || "?"
+          }x${info.videoInfo.height || "?"}</td></tr>`;
+          html += `<tr><td style="padding:8px;border-bottom:1px solid #eee;"><strong>Bitrate:</strong></td><td style="padding:8px;border-bottom:1px solid #eee;">${
+            info.videoInfo.bitrate
+              ? info.videoInfo.bitrate / 1000 + " Kbps"
+              : "Unknown"
+          }</td></tr>`;
+        }
+
+        if (info.audioInfo) {
+          html += `<tr><td style="padding:8px;border-bottom:1px solid #eee;"><strong>Audio Codec:</strong></td><td style="padding:8px;border-bottom:1px solid #eee;">${
+            info.audioInfo.codec || "Unknown"
+          }</td></tr>`;
+          html += `<tr><td style="padding:8px;border-bottom:1px solid #eee;"><strong>Channels:</strong></td><td style="padding:8px;border-bottom:1px solid #eee;">${
+            info.audioInfo.channels || "Unknown"
+          }</td></tr>`;
+        }
+
+        html += "</table>";
+        streamInfoElement.innerHTML = html;
+      }
+
+      function initDashPlayer() {
+        const url = urlInput.value.trim();
+
+        if (!url) {
+          showStatus("Please enter a valid DASH URL", "error");
+          return;
+        }
+
+        if (player) {
+          player.reset();
+        }
+
+        hideError();
+        showStatus("Initializing DASH player...");
+
+        try {
+          player = dashjs.MediaPlayer().create();
+
+          player.updateSettings({
+            debug: {
+              logLevel: dashjs.Debug.LOG_LEVEL_INFO,
+            },
+            streaming: {
+              buffer: {
+                bufferTimeAtTopQuality: 30,
+                bufferTimeAtTopQualityLongForm: 60,
+              },
+              liveCatchup: {
+                enabled: true,
+                maxDrift: 30,
+                playbackRate: {
+                  min: 0.5,
+                  max: 1.5,
+                },
+              },
+              liveDelay: 5,
+            },
+          });
+
+          player.initialize(videoElement, url, true);
+
+          player.on(dashjs.MediaPlayer.events.ERROR, function (e) {
+            console.error("DASH Player Error:", e);
+            if (e.error) {
+              showStatus(
+                `Error: ${e.error.message || "Unknown error"}`,
+                "error"
+              );
+              showError(`Detailed error: ${JSON.stringify(e.error)}`);
+            } else {
+              showStatus("Unknown error occurred", "error");
+            }
+          });
+
+          player.on(dashjs.MediaPlayer.events.MANIFEST_LOADED, function (e) {
+            showStatus("Manifest loaded successfully", "success");
+
+            const info = {
+              manifestInfo: {
+                type: player.getDuration() === Infinity ? "Live" : "VOD",
+                duration: player.getDuration(),
+              },
+            };
+
+            // Get video track info if available
+            const videoTrackInfo = player
+              .getActiveStream()
+              ?.getVideoTracks()?.[0];
+            if (videoTrackInfo) {
+              info.videoInfo = {
+                codec: videoTrackInfo.codec,
+                width: videoTrackInfo.width,
+                height: videoTrackInfo.height,
+                bitrate: videoTrackInfo.bitrateValue,
+              };
+            }
+
+            // Get audio track info if available
+            const audioTrackInfo = player
+              .getActiveStream()
+              ?.getAudioTracks()?.[0];
+            if (audioTrackInfo) {
+              info.audioInfo = {
+                codec: audioTrackInfo.codec,
+                channels: audioTrackInfo.channels,
+                bitrate: audioTrackInfo.bitrateValue,
+              };
+            }
+
+            updateStreamInfo(info);
+          });
+
+          player.on(dashjs.MediaPlayer.events.PLAYBACK_STARTED, function () {
+            showStatus("Playback started", "success");
+          });
+
+          player.on(dashjs.MediaPlayer.events.PLAYBACK_PAUSED, function () {
+            showStatus("Playback paused");
+          });
+
+          player.on(dashjs.MediaPlayer.events.PLAYBACK_ENDED, function () {
+            showStatus("Playback ended");
+          });
+
+          player.on(dashjs.MediaPlayer.events.PLAYBACK_ERROR, function (e) {
+            showStatus("Playback error", "error");
+            if (e.error) {
+              showError(e.error);
+            }
+          });
+        } catch (error) {
+          console.error("Failed to initialize DASH player:", error);
+          showStatus("Failed to initialize player", "error");
+          showError(error.toString());
+        }
+      }
+
+      document
+        .getElementById("loadDash")
+        .addEventListener("click", initDashPlayer);
+
+      document
+        .getElementById("reloadDash")
+        .addEventListener("click", function () {
+          if (player) {
+            player.reset();
+            player = null;
+          }
+          initDashPlayer();
+        });
+
+      // Allow pressing Enter in the URL field to load the stream
+      urlInput.addEventListener("keyup", function (event) {
+        if (event.key === "Enter") {
+          initDashPlayer();
+        }
+      });
+    </script>
+  </body>
+</html>

@@ -1,0 +1,42 @@
+version: "3"
+
+services:
+  # SRS Media Server
+  srs:
+    image: ossrs/srs:5
+    ports:
+      - "1935:1935" # RTMP
+      - "1985:1985" # HTTP API
+      - "8080:8080" # HTTP Server for DASH/HLS
+    volumes:
+      - ./config/srs.conf:/usr/local/srs/conf/srs.conf
+      - ./media:/usr/local/srs/objs/nginx/html
+    restart: always
+
+  # FFmpeg Transcoding Server
+  transcoder:
+    build:
+      context: ./transcoder
+      dockerfile: Dockerfile
+    platform: linux/amd64
+    depends_on:
+      - srs
+    restart: always
+    volumes:
+      - ./scripts:/app/scripts
+      - ./media:/usr/local/srs/objs/nginx/html
+    environment:
+      - PATH=/app/scripts:$PATH
+
+  # Frontend React Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - srs
+    restart: always
+    environment:
+      - NODE_ENV=production
