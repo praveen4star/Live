@@ -48,7 +48,7 @@ const rtmpConfig = {
         app: "live",
         hls: true,
         hlsFlags:
-          "[hls_time=2:hls_list_size=5:hls_flags=delete_segments+append_list]",
+          "[hls_time=1:hls_list_size=3:hls_flags=delete_segments+append_list+low_latency_mode]",
         hlsKeep: false,
         mp4: false,
         dash: false,
@@ -472,8 +472,8 @@ test2.ts
 const playerOptions = {
   liveui: true,
   liveTracker: {
-    trackingThreshold: 0.5,
-    liveTolerance: 1,
+    trackingThreshold: 0.25,
+    liveTolerance: 0.5,
   },
   html5: {
     vhs: {
@@ -481,7 +481,8 @@ const playerOptions = {
       lowLatencyMode: true,
       useBandwidthFromLocalStorage: true,
       enableLowInitialPlaylist: true,
-      bufferSize: 0.5,
+      bufferSize: 0.1,
+      liveBackBufferLength: 10,
     },
   },
 };
