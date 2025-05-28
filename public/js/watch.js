@@ -51,7 +51,7 @@ document.addEventListener("DOMContentLoaded", () => {
       liveui: true,
       liveTracker: {
         trackingThreshold: 0,
-        liveTolerance: 15,
+        liveTolerance: 5,
       },
       html5: {
         vhs: {
@@ -66,6 +66,12 @@ document.addEventListener("DOMContentLoaded", () => {
           // Add better error handling settings
           handlePartialData: true,
           maxPlaylistRetries: 3,
+          // Add low latency settings
+          liveBackBufferLength: 10,
+          liveSyncDuration: 1, // Target a 1-second buffer for live
+          liveMaxLatencyDuration: 3, // Maximum acceptable latency
+          lowLatencyMode: true, // Enable low latency mode
+          backBufferLength: 10, // Limit backward buffer
         },
         nativeAudioTracks: false,
         nativeVideoTracks: false,
