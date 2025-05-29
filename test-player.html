@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Live Stream Test Player</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      .container {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .player-container {
+        width: 100%;
+        background: #000;
+        position: relative;
+      }
+      video {
+        width: 100%;
+        max-height: 720px;
+      }
+      .controls {
+        background: #f5f5f5;
+        padding: 20px;
+        border-radius: 5px;
+      }
+      .input-group {
+        margin-bottom: 15px;
+      }
+      label {
+        display: block;
+        margin-bottom: 5px;
+        font-weight: bold;
+      }
+      input[type="text"] {
+        width: 100%;
+        padding: 8px;
+        border-radius: 4px;
+        border: 1px solid #ccc;
+        box-sizing: border-box;
+      }
+      button {
+        padding: 10px 15px;
+        background-color: #0078d7;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-right: 10px;
+      }
+      .info {
+        background-color: #fff;
+        padding: 15px;
+        border-radius: 5px;
+        border: 1px solid #ddd;
+        margin-top: 20px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Live Stream Test Player</h1>
+
+    <div class="container">
+      <div class="controls">
+        <h2>Stream Settings</h2>
+
+        <div class="input-group">
+          <label for="streamId">Stream ID:</label>
+          <input type="text" id="streamId" value="test-stream-123" />
+        </div>
+
+        <div>
+          <button id="loadHls">Load HLS</button>
+          <button id="loadWebRtc">Load WebRTC</button>
+          <button id="stopStream">Stop Stream</button>
+        </div>
+
+        <div class="info">
+          <h3>Stream URLs</h3>
+          <p><strong>HLS:</strong> <span id="hlsUrl"></span></p>
+          <p><strong>WebRTC:</strong> <span id="webrtcUrl"></span></p>
+        </div>
+      </div>
+
+      <div class="player-container">
+        <video id="videoPlayer" controls autoplay muted></video>
+      </div>
+
+      <div id="log" class="info">
+        <h3>Player Log</h3>
+        <pre id="logContent"></pre>
+      </div>
+    </div>
+
+    <!-- Include hls.js for HLS playback -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+
+    <!-- Include WebRTC adapter for compatibility -->
+    <script src="https://webrtc.github.io/adapter/adapter-latest.js"></script>
+
+    <script>
+      // DOM elements
+      const videoPlayer = document.getElementById("videoPlayer");
+      const streamIdInput = document.getElementById("streamId");
+      const loadHlsButton = document.getElementById("loadHls");
+      const loadWebRtcButton = document.getElementById("loadWebRtc");
+      const stopStreamButton = document.getElementById("stopStream");
+      const hlsUrlDisplay = document.getElementById("hlsUrl");
+      const webrtcUrlDisplay = document.getElementById("webrtcUrl");
+      const logContent = document.getElementById("logContent");
+
+      // Variables
+      let hlsPlayer = null;
+      let peerConnection = null;
+      let currentStreamType = null;
+
+      // Logger function
+      function log(message) {
+        console.log(message);
+        const timestamp = new Date().toISOString().substr(11, 8);
+        logContent.textContent =
+          `[${timestamp}] ${message}\n` + logContent.textContent;
+      }
+
+      // Update URLs display
+      function updateUrls() {
+        const streamId = streamIdInput.value;
+        const hlsUrl = `http://localhost:8080/app/${streamId}/llhls.m3u8`;
+        const webrtcUrl = `ws://localhost:3333/app/${streamId}`;
+
+        hlsUrlDisplay.textContent = hlsUrl;
+        webrtcUrlDisplay.textContent = webrtcUrl;
+
+        return { hlsUrl, webrtcUrl };
+      }
+
+      // Initialize on page load
+      updateUrls();
+
+      // Load HLS stream
+      loadHlsButton.addEventListener("click", () => {
+        stopStream();
+        const { hlsUrl } = updateUrls();
+
+        log(`Loading HLS stream from: ${hlsUrl}`);
+
+        if (Hls.isSupported()) {
+          hlsPlayer = new Hls({
+            liveDurationInfinity: true,
+            lowLatencyMode: true,
+            liveSyncDuration: 1.5,
+            liveMaxLatencyDuration: 6,
+          });
+
+          hlsPlayer.loadSource(hlsUrl);
+          hlsPlayer.attachMedia(videoPlayer);
+
+          hlsPlayer.on(Hls.Events.MANIFEST_PARSED, () => {
+            log("HLS manifest parsed, attempting to play");
+            videoPlayer.play().catch((e) => log(`Play error: ${e.message}`));
+          });
+
+          hlsPlayer.on(Hls.Events.ERROR, (event, data) => {
+            log(`HLS error: ${data.type} - ${data.details}`);
+            if (data.fatal) {
+              log("Fatal HLS error, trying to recover");
+              switch (data.type) {
+                case Hls.ErrorTypes.NETWORK_ERROR:
+                  hlsPlayer.startLoad();
+                  break;
+                case Hls.ErrorTypes.MEDIA_ERROR:
+                  hlsPlayer.recoverMediaError();
+                  break;
+                default:
+                  stopStream();
+                  break;
+              }
+            }
+          });
+
+          currentStreamType = "hls";
+        } else if (videoPlayer.canPlayType("application/vnd.apple.mpegurl")) {
+          log("Using native HLS support");
+          videoPlayer.src = hlsUrl;
+          videoPlayer.addEventListener("loadedmetadata", () => {
+            videoPlayer.play().catch((e) => log(`Play error: ${e.message}`));
+          });
+          currentStreamType = "hls-native";
+        } else {
+          log("HLS is not supported in this browser");
+        }
+      });
+
+      // Load WebRTC stream
+      loadWebRtcButton.addEventListener("click", () => {
+        stopStream();
+        const { webrtcUrl } = updateUrls();
+
+        log(`Loading WebRTC stream from: ${webrtcUrl}`);
+
+        // Create WebRTC peer connection
+        const configuration = {
+          iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+          ],
+        };
+
+        peerConnection = new RTCPeerConnection(configuration);
+
+        // Create WebSocket connection to signaling server
+        const ws = new WebSocket(webrtcUrl);
+
+        ws.onopen = () => {
+          log("WebSocket connected, sending offer");
+
+          // Create data channel (required by OME)
+          peerConnection.createDataChannel("data");
+
+          // Create SDP offer
+          peerConnection
+            .createOffer()
+            .then((offer) => {
+              return peerConnection.setLocalDescription(offer);
+            })
+            .then(() => {
+              log("Local description set, waiting for ICE candidates");
+            })
+            .catch((error) => {
+              log(`Error creating offer: ${error.message}`);
+            });
+        };
+
+        // ICE candidate event
+        peerConnection.onicecandidate = (event) => {
+          if (event.candidate === null) {
+            // All ICE candidates have been gathered
+            log("All ICE candidates gathered, sending offer");
+
+            const offerMessage = {
+              command: "offer",
+              sdp: peerConnection.localDescription.sdp,
+            };
+
+            ws.send(JSON.stringify(offerMessage));
+          }
+        };
+
+        // Track event handler
+        peerConnection.ontrack = (event) => {
+          log(`Received ${event.track.kind} track`);
+          if (videoPlayer.srcObject !== event.streams[0]) {
+            videoPlayer.srcObject = event.streams[0];
+            log("Stream attached to video element");
+            videoPlayer.play().catch((e) => log(`Play error: ${e.message}`));
+          }
+        };
+
+        // WebSocket message handler
+        ws.onmessage = (event) => {
+          const message = JSON.parse(event.data);
+
+          if (message.command === "answer") {
+            log("Received SDP answer");
+
+            const remoteDesc = new RTCSessionDescription({
+              type: "answer",
+              sdp: message.sdp,
+            });
+
+            peerConnection
+              .setRemoteDescription(remoteDesc)
+              .then(() => {
+                log("Remote description set");
+              })
+              .catch((error) => {
+                log(`Error setting remote description: ${error.message}`);
+              });
+          }
+        };
+
+        ws.onerror = (error) => {
+          log(`WebSocket error: ${error.message}`);
+        };
+
+        ws.onclose = () => {
+          log("WebSocket connection closed");
+        };
+
+        currentStreamType = "webrtc";
+      });
+
+      // Stop stream playback
+      stopStreamButton.addEventListener("click", stopStream);
+
+      function stopStream() {
+        log(`Stopping ${currentStreamType || "inactive"} stream`);
+
+        // Stop HLS playback
+        if (hlsPlayer) {
+          hlsPlayer.destroy();
+          hlsPlayer = null;
+        }
+
+        // Stop WebRTC connection
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+
+        // Reset video element
+        videoPlayer.pause();
+        videoPlayer.src = "";
+        videoPlayer.srcObject = null;
+        videoPlayer.load();
+
+        currentStreamType = null;
+      }
+
+      // Stream ID input change handler
+      streamIdInput.addEventListener("input", updateUrls);
+
+      // Log initial state
+      log("Player initialized");
+    </script>
+  </body>
+</html>

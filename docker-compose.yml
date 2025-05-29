@@ -1,0 +1,85 @@
+version: "3.8"
+
+services:
+  ome:
+    image: airensoft/ovenmediaengine:latest
+    container_name: ome
+    ports:
+      - "1935:1935" # RTMP
+      - "3333:3333" # WebRTC
+      - "3478:3478" # TURN/TCP relay
+      - "10000-10004:10000-10004/udp" # WebRTC UDP
+      - "8080:8080" # LL-HLS
+      - "8081:8081" # API
+    volumes:
+      - ./Server.xml:/opt/ovenmediaengine/Server.xml:ro
+    networks:
+      - streaming-network
+    restart: unless-stopped
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=your_jwt_secret_key_change_this_in_production
+      - OME_API_URL=http://ome:8081
+    depends_on:
+      - ome
+    networks:
+      - streaming-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    ports:
+      - "8000:80"
+    depends_on:
+      - backend
+      - ome
+    networks:
+      - streaming-network
+    restart: unless-stopped
+
+  vod-uploader:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    command: ["node", "src/services/vodUploader.js"]
+    environment:
+      - NODE_ENV=production
+      - STORAGE_TYPE=local
+      - LOCAL_VOD_PATH=/app/vod
+      - OME_RECORDS_PATH=/opt/ovenmediaengine/records
+      - BACKEND_API=http://backend:3000
+      # Uncomment and set these when ready to use Google Cloud Storage
+      # - STORAGE_TYPE=gcs
+      # - GOOGLE_APPLICATION_CREDENTIALS=/app/gcs-credentials.json
+      # - STORAGE_BUCKET=your-storage-bucket
+    volumes:
+      - ome-records:/opt/ovenmediaengine/records:ro
+      - vod-storage:/app/vod
+      # Create the VOD uploader script directly in the container
+      - ./backend/src/services/vodUploader.js:/app/src/services/vodUploader.js
+      # Uncomment when using GCS credentials
+      # - ./gcs-credentials.json:/app/gcs-credentials.json:ro
+    depends_on:
+      - ome
+      - backend
+    networks:
+      - streaming-network
+    restart: unless-stopped
+
+networks:
+  streaming-network:
+    driver: bridge
+
+volumes:
+  ome-records:
+    driver: local
+  vod-storage:
+    driver: local

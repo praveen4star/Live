@@ -1,0 +1,377 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ome
+  namespace: live-streaming
+  labels:
+    app: ome
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ome
+  template:
+    metadata:
+      labels:
+        app: ome
+    spec:
+      containers:
+        - name: ome
+          image: ${DOCKER_REGISTRY}/ome:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 1935
+              name: rtmp
+            - containerPort: 3333
+              name: webrtc
+            - containerPort: 3478
+              name: turn
+            - containerPort: 8080
+              name: llhls
+            - containerPort: 8081
+              name: api
+            - containerPort: 8082
+              name: api-tls
+            - containerPort: 10000
+              name: webrtc-udp1
+              protocol: UDP
+            - containerPort: 10001
+              name: webrtc-udp2
+              protocol: UDP
+            - containerPort: 10002
+              name: webrtc-udp3
+              protocol: UDP
+            - containerPort: 10003
+              name: webrtc-udp4
+              protocol: UDP
+            - containerPort: 10004
+              name: webrtc-udp5
+              protocol: UDP
+          resources:
+            requests:
+              memory: "1Gi"
+              cpu: "1000m"
+            limits:
+              memory: "4Gi"
+              cpu: "4000m"
+          volumeMounts:
+            - name: ome-config
+              mountPath: /opt/ovenmediaengine/config/Server.xml
+              subPath: Server.xml
+            - name: ome-records
+              mountPath: /opt/ovenmediaengine/records
+            - name: ome-cert
+              mountPath: /opt/ovenmediaengine/cert
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 10
+      volumes:
+        - name: ome-config
+          configMap:
+            name: ome-config
+        - name: ome-records
+          persistentVolumeClaim:
+            claimName: ome-records-pvc
+        - name: ome-cert
+          secret:
+            secretName: ome-cert
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ome
+  namespace: live-streaming
+spec:
+  selector:
+    app: ome
+  ports:
+    - port: 1935
+      targetPort: 1935
+      name: rtmp
+    - port: 3333
+      targetPort: 3333
+      name: webrtc
+    - port: 3478
+      targetPort: 3478
+      name: turn
+    - port: 8080
+      targetPort: 8080
+      name: llhls
+    - port: 8081
+      targetPort: 8081
+      name: api
+    - port: 8082
+      targetPort: 8082
+      name: api-tls
+    - port: 10000
+      targetPort: 10000
+      protocol: UDP
+      name: webrtc-udp1
+    - port: 10001
+      targetPort: 10001
+      protocol: UDP
+      name: webrtc-udp2
+    - port: 10002
+      targetPort: 10002
+      protocol: UDP
+      name: webrtc-udp3
+    - port: 10003
+      targetPort: 10003
+      protocol: UDP
+      name: webrtc-udp4
+    - port: 10004
+      targetPort: 10004
+      protocol: UDP
+      name: webrtc-udp5
+  type: ClusterIP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ome-config
+  namespace: live-streaming
+data:
+  Server.xml: |
+    <?xml version="1.0" encoding="UTF-8"?>
+    <Server version="8" type="origin">
+      <Name>OvenMediaEngine</Name>
+      
+      <!-- Host information -->
+      <Hosts>
+        <Host>
+          <Name>default</Name>
+          <IP>*</IP>
+          <TLS>
+            <CertPath>/opt/ovenmediaengine/cert/tls.crt</CertPath>
+            <KeyPath>/opt/ovenmediaengine/cert/tls.key</KeyPath>
+          </TLS>
+          
+          <!-- Virtual hosts -->
+          <VirtualHosts>
+            <VirtualHost>
+              <Name>default</Name>
+              <Domain>*</Domain>
+              
+              <!-- Applications -->
+              <Applications>
+                <Application>
+                  <Name>live</Name>
+                  <Type>live</Type>
+                  
+                  <Origins>
+                    <Origin>
+                      <Location>/live_edge</Location>
+                      <Pass>
+                        <Scheme>ovt</Scheme>
+                        <Urls>
+                          <Url>origin:9000/live_origin</Url>
+                        </Urls>
+                      </Pass>
+                    </Origin>
+                  </Origins>
+                  
+                  <!-- Publishers -->
+                  <Publishers>
+                    <RtmpPush>
+                      <Enable>true</Enable>
+                      <SocketAddrs>
+                        <SocketAddr>
+                          <Port>1935</Port>
+                        </SocketAddr>
+                      </SocketAddrs>
+                      <StreamKeys>
+                        <Validation>true</Validation>
+                        <Webhook>
+                          <Enabled>true</Enabled>
+                          <Url>http://backend:3000/hooks/on_publish</Url>
+                          <TimeoutMsec>3000</TimeoutMsec>
+                        </Webhook>
+                      </StreamKeys>
+                    </RtmpPush>
+                    
+                    <WebRTC>
+                      <Enable>true</Enable>
+                      <Port>3333</Port>
+                      <MaxBitrate>5000000</MaxBitrate>
+                      <Timeout>30000</Timeout>
+                      <SignallingEndpoint>/ws-signalling</SignallingEndpoint>
+                    </WebRTC>
+                    
+                    <LLHLS>
+                      <Enable>true</Enable>
+                      <SegmentDuration>6</SegmentDuration>
+                      <SegmentCount>10</SegmentCount>
+                      <CrossDomains>
+                        <Url>*</Url>
+                      </CrossDomains>
+                      <ChunkDuration>0.2</ChunkDuration>
+                      <ClientCache>1.5</ClientCache>
+                      <StreamRelay>
+                        <Enabled>true</Enabled>
+                        <BindAddress>*:8080</BindAddress>
+                      </StreamRelay>
+                    </LLHLS>
+                  </Publishers>
+                  
+                  <!-- Transcoder -->
+                  <Transcoder>
+                    <Enable>true</Enable>
+                    <HardwareAcceleration>false</HardwareAcceleration>
+                    <Threads>0</Threads>
+                    <Streams>
+                      <Stream>
+                        <Name>main</Name>
+                        <Profiles>
+                          <Profile>
+                            <Name>1080p</Name>
+                            <Video>
+                              <Codec>h264</Codec>
+                              <Width>1920</Width>
+                              <Height>1080</Height>
+                              <Bitrate>4500000</Bitrate>
+                              <Framerate>30</Framerate>
+                            </Video>
+                            <Audio>
+                              <Codec>aac</Codec>
+                              <Bitrate>128000</Bitrate>
+                              <Samplerate>48000</Samplerate>
+                              <Channel>2</Channel>
+                            </Audio>
+                          </Profile>
+                          <Profile>
+                            <Name>720p</Name>
+                            <Video>
+                              <Codec>h264</Codec>
+                              <Width>1280</Width>
+                              <Height>720</Height>
+                              <Bitrate>2500000</Bitrate>
+                              <Framerate>30</Framerate>
+                            </Video>
+                            <Audio>
+                              <Codec>aac</Codec>
+                              <Bitrate>128000</Bitrate>
+                              <Samplerate>48000</Samplerate>
+                              <Channel>2</Channel>
+                            </Audio>
+                          </Profile>
+                          <Profile>
+                            <Name>480p</Name>
+                            <Video>
+                              <Codec>h264</Codec>
+                              <Width>854</Width>
+                              <Height>480</Height>
+                              <Bitrate>1200000</Bitrate>
+                              <Framerate>30</Framerate>
+                            </Video>
+                            <Audio>
+                              <Codec>aac</Codec>
+                              <Bitrate>96000</Bitrate>
+                              <Samplerate>48000</Samplerate>
+                              <Channel>2</Channel>
+                            </Audio>
+                          </Profile>
+                          <Profile>
+                            <Name>360p</Name>
+                            <Video>
+                              <Codec>h264</Codec>
+                              <Width>640</Width>
+                              <Height>360</Height>
+                              <Bitrate>600000</Bitrate>
+                              <Framerate>30</Framerate>
+                            </Video>
+                            <Audio>
+                              <Codec>aac</Codec>
+                              <Bitrate>96000</Bitrate>
+                              <Samplerate>48000</Samplerate>
+                              <Channel>2</Channel>
+                            </Audio>
+                          </Profile>
+                        </Profiles>
+                      </Stream>
+                    </Streams>
+                  </Transcoder>
+                  
+                  <!-- Record -->
+                  <Recording>
+                    <Enable>true</Enable>
+                    <RecordHlsRootPath>/opt/ovenmediaengine/records</RecordHlsRootPath>
+                    <Webhook>
+                      <Enabled>true</Enabled>
+                      <Url>http://backend:3000/hooks/on_record</Url>
+                      <TimeoutMsec>3000</TimeoutMsec>
+                    </Webhook>
+                  </Recording>
+                  
+                  <!-- Stream Protection -->
+                  <OutputProtections>
+                    <WebrtcProtection>
+                      <Mode>secured</Mode>
+                      <Key>your_shared_key</Key>
+                      <Timeout>3000</Timeout>
+                    </WebrtcProtection>
+                    <HlsProtection>
+                      <Mode>secured</Mode>
+                      <Key>your_shared_key</Key>
+                      <Timeout>3000</Timeout>
+                    </HlsProtection>
+                  </OutputProtections>
+                </Application>
+              </Applications>
+            </VirtualHost>
+          </VirtualHosts>
+        </Host>
+      </Hosts>
+      
+      <!-- WebRTC ICE Candidates -->
+      <Bind>
+        <Managers>
+          <API>
+            <Port>8081</Port>
+            <TLSPort>8082</TLSPort>
+          </API>
+        </Managers>
+        
+        <WebRTC>
+          <IceCandidates>
+            <IceCandidate>*:10000-10004/udp</IceCandidate>
+          </IceCandidates>
+          <TcpRelay>
+            <Listen>*:3478</Listen>
+            <TcpForwarding>true</TcpForwarding>
+            <Protocol>tcp</Protocol>
+          </TcpRelay>
+          <IceServers>
+            <TurnServer>
+              <Url>turn:turn.example.com:3478</Url>
+              <UserName>username</UserName>
+              <Credential>password</Credential>
+            </TurnServer>
+            <StunServer>
+              <Url>stun:stun.example.com:3478</Url>
+            </StunServer>
+          </IceServers>
+        </WebRTC>
+      </Bind>
+    </Server>
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ome-records-pvc
+  namespace: live-streaming
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: standard

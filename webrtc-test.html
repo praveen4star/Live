@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>WebRTC-Only Test Player</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 20px;
+      }
+      video {
+        width: 100%;
+        background: #000;
+        max-height: 450px;
+      }
+      .controls {
+        margin: 20px 0;
+        padding: 20px;
+        background: #f5f5f5;
+        border-radius: 5px;
+      }
+      input {
+        width: 100%;
+        padding: 8px;
+        margin-bottom: 10px;
+      }
+      button {
+        padding: 10px 15px;
+        background: #0078d7;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        margin-right: 10px;
+      }
+      #log {
+        background: #f9f9f9;
+        padding: 10px;
+        border: 1px solid #ddd;
+        border-radius: 4px;
+        margin-top: 20px;
+        height: 200px;
+        overflow-y: auto;
+        font-family: monospace;
+      }
+      .status {
+        margin-top: 10px;
+        padding: 8px;
+        border-radius: 4px;
+      }
+      .status.success {
+        background-color: #e6ffe6;
+        border: 1px solid #4caf50;
+      }
+      .status.error {
+        background-color: #ffe6e6;
+        border: 1px solid #ff6666;
+      }
+      .status.pending {
+        background-color: #fffde6;
+        border: 1px solid #ffd700;
+      }
+      .media-stats {
+        display: flex;
+        gap: 20px;
+        margin-top: 15px;
+      }
+      .media-stats > div {
+        flex: 1;
+        padding: 10px;
+        border-radius: 4px;
+        background: #f0f0f0;
+        border: 1px solid #ddd;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>WebRTC-Only Test Player</h1>
+
+    <div class="controls">
+      <h3>Enter WebRTC Stream URL</h3>
+      <input
+        type="text"
+        id="streamUrl"
+        value="ws://localhost:3333/app/webrtc-test-stream"
+      />
+      <button id="connectBtn">Connect</button>
+      <button id="disconnectBtn">Disconnect</button>
+
+      <div id="connectionStatus" class="status pending">Not connected</div>
+
+      <div class="media-stats">
+        <div>
+          <h4>Video</h4>
+          <div id="videoStatus">No video</div>
+          <div id="videoStats"></div>
+        </div>
+        <div>
+          <h4>Audio</h4>
+          <div id="audioStatus">No audio</div>
+          <div id="audioStats"></div>
+        </div>
+      </div>
+    </div>
+
+    <video id="video" controls autoplay muted></video>
+
+    <div id="log">Logs will appear here...</div>
+
+    <script>
+      // DOM elements
+      const video = document.getElementById("video");
+      const streamUrlInput = document.getElementById("streamUrl");
+      const connectBtn = document.getElementById("connectBtn");
+      const disconnectBtn = document.getElementById("disconnectBtn");
+      const connectionStatus = document.getElementById("connectionStatus");
+      const videoStatus = document.getElementById("videoStatus");
+      const audioStatus = document.getElementById("audioStatus");
+      const videoStats = document.getElementById("videoStats");
+      const audioStats = document.getElementById("audioStats");
+      const logDiv = document.getElementById("log");
+
+      // State variables
+      let peerConnection = null;
+      let webSocket = null;
+      let statsInterval = null;
+
+      // Function to log messages
+      function log(message) {
+        console.log(message);
+        const now = new Date().toISOString().substring(11, 19);
+        logDiv.innerHTML = `[${now}] ${message}<br>` + logDiv.innerHTML;
+      }
+
+      // Update connection status UI
+      function updateStatus(element, status, message) {
+        element.textContent = message;
+        element.className = "status";
+
+        if (status === "success") {
+          element.classList.add("success");
+        } else if (status === "error") {
+          element.classList.add("error");
+        } else if (status === "pending") {
+          element.classList.add("pending");
+        }
+      }
+
+      // Connect to WebRTC stream
+      connectBtn.addEventListener("click", () => {
+        if (peerConnection) {
+          log("Already connected. Disconnect first.");
+          return;
+        }
+
+        const url = streamUrlInput.value.trim();
+        log(`Connecting to: ${url}`);
+        updateStatus(connectionStatus, "pending", "Connecting...");
+        updateStatus(videoStatus, "pending", "Waiting for video...");
+        updateStatus(audioStatus, "pending", "Waiting for audio...");
+
+        // Create WebRTC peer connection
+        const config = {
+          iceServers: [
+            { urls: "stun:stun.l.google.com:19302" },
+            { urls: "stun:stun1.l.google.com:19302" },
+          ],
+          sdpSemantics: "unified-plan",
+          bundlePolicy: "max-bundle",
+        };
+
+        try {
+          peerConnection = new RTCPeerConnection(config);
+          log("PeerConnection created");
+
+          // Create WebSocket connection
+          webSocket = new WebSocket(url);
+
+          webSocket.onopen = () => {
+            log("WebSocket connected");
+
+            // Create data channel (required by OvenMediaEngine)
+            peerConnection.createDataChannel("data");
+
+            // Create offer
+            peerConnection
+              .createOffer()
+              .then((offer) => {
+                log("Created offer, setting local description");
+                return peerConnection.setLocalDescription(offer);
+              })
+              .then(() => {
+                log("Local description set, gathering ICE candidates");
+              })
+              .catch((error) => {
+                log(`Error creating offer: ${error.message}`);
+                updateStatus(
+                  connectionStatus,
+                  "error",
+                  "Offer creation failed"
+                );
+              });
+          };
+
+          // ICE candidate event
+          peerConnection.onicecandidate = (event) => {
+            if (event.candidate === null) {
+              // All ICE candidates gathered, send offer
+              log("All ICE candidates gathered, sending offer");
+
+              const offerMessage = {
+                command: "offer",
+                sdp: peerConnection.localDescription.sdp,
+              };
+
+              webSocket.send(JSON.stringify(offerMessage));
+            }
+          };
+
+          // Track event handler
+          peerConnection.ontrack = (event) => {
+            log(`Received ${event.track.kind} track`);
+
+            if (event.track.kind === "video") {
+              updateStatus(videoStatus, "success", "Video track received");
+            } else if (event.track.kind === "audio") {
+              updateStatus(audioStatus, "success", "Audio track received");
+            }
+
+            if (video.srcObject !== event.streams[0]) {
+              video.srcObject = event.streams[0];
+              log("Stream attached to video element");
+              updateStatus(connectionStatus, "success", "Connected");
+
+              // Start stats monitoring
+              startStatsMonitoring();
+
+              video.play().catch((e) => log(`Play error: ${e.message}`));
+            }
+          };
+
+          // Connection state change
+          peerConnection.onconnectionstatechange = () => {
+            log(`Connection state: ${peerConnection.connectionState}`);
+
+            if (peerConnection.connectionState === "connected") {
+              updateStatus(connectionStatus, "success", "Connected");
+            } else if (
+              peerConnection.connectionState === "failed" ||
+              peerConnection.connectionState === "disconnected" ||
+              peerConnection.connectionState === "closed"
+            ) {
+              updateStatus(
+                connectionStatus,
+                "error",
+                `Connection ${peerConnection.connectionState}`
+              );
+              disconnect();
+            }
+          };
+
+          // WebSocket message handler
+          webSocket.onmessage = (event) => {
+            try {
+              const message = JSON.parse(event.data);
+
+              if (message.command === "answer") {
+                log("Received SDP answer");
+
+                const remoteDesc = new RTCSessionDescription({
+                  type: "answer",
+                  sdp: message.sdp,
+                });
+
+                peerConnection
+                  .setRemoteDescription(remoteDesc)
+                  .then(() => {
+                    log("Remote description set");
+                  })
+                  .catch((error) => {
+                    log(`Error setting remote description: ${error.message}`);
+                    updateStatus(
+                      connectionStatus,
+                      "error",
+                      "SDP answer failed"
+                    );
+                  });
+              }
+            } catch (error) {
+              log(`Error parsing message: ${error.message}`);
+            }
+          };
+
+          webSocket.onerror = (error) => {
+            log(`WebSocket error: ${error.message || "Unknown error"}`);
+            updateStatus(connectionStatus, "error", "WebSocket error");
+          };
+
+          webSocket.onclose = () => {
+            log("WebSocket connection closed");
+            updateStatus(connectionStatus, "error", "WebSocket closed");
+            disconnect();
+          };
+        } catch (error) {
+          log(`Connection error: ${error.message}`);
+          updateStatus(connectionStatus, "error", "Connection failed");
+        }
+      });
+
+      // Disconnect from WebRTC stream
+      disconnectBtn.addEventListener("click", disconnect);
+
+      function disconnect() {
+        log("Disconnecting...");
+
+        if (statsInterval) {
+          clearInterval(statsInterval);
+          statsInterval = null;
+        }
+
+        if (peerConnection) {
+          peerConnection.close();
+          peerConnection = null;
+        }
+
+        if (webSocket) {
+          webSocket.close();
+          webSocket = null;
+        }
+
+        video.pause();
+        video.srcObject = null;
+
+        updateStatus(connectionStatus, "pending", "Disconnected");
+        updateStatus(videoStatus, "pending", "No video");
+        updateStatus(audioStatus, "pending", "No audio");
+        videoStats.innerHTML = "";
+        audioStats.innerHTML = "";
+
+        log("Disconnected");
+      }
+
+      // Collect and display WebRTC stats
+      function startStatsMonitoring() {
+        if (statsInterval) {
+          clearInterval(statsInterval);
+        }
+
+        statsInterval = setInterval(() => {
+          if (!peerConnection) return;
+
+          peerConnection.getStats().then((stats) => {
+            let videoStatText = "";
+            let audioStatText = "";
+
+            stats.forEach((report) => {
+              if (report.type === "inbound-rtp" && report.kind === "video") {
+                videoStatText = `
+                Resolution: ${report.frameWidth}x${report.frameHeight}<br>
+                Frames: ${report.framesReceived}<br>
+                FPS: ${Math.round(report.framesPerSecond || 0)}<br>
+                Bitrate: ${Math.round(
+                  (report.bytesReceived * 8) / (report.timestamp / 1000) / 1000
+                )} kbps
+              `;
+              }
+
+              if (report.type === "inbound-rtp" && report.kind === "audio") {
+                audioStatText = `
+                Packets: ${report.packetsReceived}<br>
+                Lost: ${report.packetsLost}<br>
+                Jitter: ${report.jitter.toFixed(3)}s<br>
+                Bitrate: ${Math.round(
+                  (report.bytesReceived * 8) / (report.timestamp / 1000) / 1000
+                )} kbps
+              `;
+              }
+            });
+
+            videoStats.innerHTML = videoStatText || "No stats available";
+            audioStats.innerHTML = audioStatText || "No stats available";
+          });
+        }, 1000);
+      }
+
+      // Initialize
+      log("WebRTC Test Player loaded");
+    </script>
+  </body>
+</html>
