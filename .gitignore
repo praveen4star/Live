@@ -72,6 +72,13 @@ config.*.json
 # Generated OME configs
 /ome-configs/generated/
 
+# SSL certificates
+origin_conf/
+*.crt
+*.key
+*.pem
+*.ca-bundle
+
 # Cache
 .cache/
 .npm/

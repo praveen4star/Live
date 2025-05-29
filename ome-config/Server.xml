@@ -11,6 +11,14 @@
         <VirtualHost>
           <Name>default</Name>
           <Domain>*</Domain>
+          
+          <!-- Disable TLS for development -->
+          <TLS>
+            <Enable>false</Enable>
+            <CertPath>origin_conf/cert.crt</CertPath>
+            <KeyPath>origin_conf/cert.key</KeyPath>
+            <ChainCertPath>origin_conf/cert.ca-bundle</ChainCertPath>
+          </TLS>
 
           <Applications>
             <Application>

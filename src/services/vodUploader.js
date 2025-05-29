@@ -107,6 +107,7 @@ class VodUploader {
   }
 }
 
+console.log({ xx: require.main });
 // Create the module as a standalone script
 if (require.main === module) {
   console.log("Running VOD Uploader as a standalone script");
