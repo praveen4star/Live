@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useCallback } from "react";
 import OvenPlayer from "ovenplayer";
 // Import HLS.js directly to ensure it's available
 import Hls from "hls.js";
@@ -23,13 +23,13 @@ const VideoPlayer = ({
   const [generatedStreamKey, setGeneratedStreamKey] = useState("");
   const [generatedStreamId, setGeneratedStreamId] = useState(streamId || "");
   const [showStreamInfo, setShowStreamInfo] = useState(false);
-  const [isPlayerReady, setIsPlayerReady] = useState(false);
-  const [hlsSupported, setHlsSupported] = useState(Hls.isSupported());
-  const [preferredProtocol, setPreferredProtocol] = useState("auto"); // auto, hls, webrtc
+  const [hlsSupported] = useState(Hls.isSupported());
+  const [preferredProtocol, setPreferredProtocol] = useState("hls"); // auto, hls, webrtc
   const [protocolStatus, setProtocolStatus] = useState({
     hls: "unknown",
     webrtc: "unknown",
   });
+  const [streamAvailability, setStreamAvailability] = useState(null);
 
   // Generate a random stream key
   const generateStreamKey = () => {
@@ -58,6 +58,28 @@ const VideoPlayer = ({
     return uuid;
   };
 
+  // Test if a stream is available
+  const testStreamAvailability = async (streamId) => {
+    try {
+      const hlsUrl = `http://localhost:8080/app/${streamId}/llhls.m3u8`;
+      const response = await fetch(hlsUrl, {
+        method: "HEAD",
+        timeout: 5000,
+      });
+
+      if (response.ok) {
+        return { available: true, protocol: "hls" };
+      } else if (response.status === 404) {
+        return { available: false, error: "Stream not found (404)" };
+      } else {
+        return { available: false, error: `HTTP ${response.status}` };
+      }
+    } catch (error) {
+      console.warn("Stream availability test failed:", error);
+      return { available: false, error: error.message };
+    }
+  };
+
   // Clean up player on unmount
   useEffect(() => {
     return () => {
@@ -77,7 +99,7 @@ const VideoPlayer = ({
     if (!generatedStreamKey) {
       generateStreamKey();
     }
-  }, []);
+  }, [generatedStreamKey]);
 
   // Initialize player when container and stream ID are ready
   useEffect(() => {
@@ -91,9 +113,10 @@ const VideoPlayer = ({
     }, 100);
 
     return () => clearTimeout(timer);
-  }, [generatedStreamId, containerRef.current]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [generatedStreamId, preferredProtocol]); // Disable exhaustive deps to avoid circular dependency
 
-  const initializePlayer = async () => {
+  const initializePlayer = useCallback(async () => {
     try {
       setError(null);
       setProtocolStatus({
@@ -106,6 +129,19 @@ const VideoPlayer = ({
         console.error("Player container not found");
         setError("Player container not found");
         return;
+      }
+
+      // Validate stream ID format
+      if (!generatedStreamId || generatedStreamId.trim() === "") {
+        setError("Stream ID is required");
+        return;
+      }
+
+      // Basic UUID validation for stream ID
+      const uuidRegex =
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+      if (!uuidRegex.test(generatedStreamId)) {
+        console.warn("Stream ID does not appear to be a valid UUID format");
       }
 
       // Check if OvenPlayer is properly loaded
@@ -126,20 +162,49 @@ const VideoPlayer = ({
       let sources = [];
 
       if (preferredProtocol === "auto" || preferredProtocol === "hls") {
-        sources.push({
-          type: "hls",
-          // Direct URL with port - more reliable
-          file: `http://localhost:8080/app/${generatedStreamId}/llhls.m3u8`,
-          label: "LL-HLS (Low Latency)",
-        });
+        // Construct HLS URL properly - token should be a query parameter, not part of the path
+        const hlsUrl = `http://localhost:8080/app/${generatedStreamId}/llhls.m3u8`;
+
+        // Validate URL construction
+        try {
+          new URL(hlsUrl);
+          sources.push({
+            type: "hls",
+            file: hlsUrl,
+            label: "LL-HLS (Low Latency)",
+          });
+        } catch (urlError) {
+          console.error("Invalid HLS URL constructed:", hlsUrl, urlError);
+          setError("Failed to construct valid HLS URL");
+          return;
+        }
       }
 
       if (preferredProtocol === "auto" || preferredProtocol === "webrtc") {
-        sources.push({
-          type: "webrtc",
-          file: `ws://localhost:3333/app/${generatedStreamId}`,
-          label: "WebRTC (Ultra-Low Latency)",
-        });
+        // WebRTC URL construction - token can be part of stream name or query parameter
+        const webrtcBaseUrl = `ws://localhost:3333/app/${generatedStreamId}`;
+        const webrtcUrl = generatedStreamKey
+          ? `${webrtcBaseUrl}?token=${generatedStreamKey}`
+          : webrtcBaseUrl;
+
+        // Validate WebRTC URL
+        try {
+          new URL(webrtcUrl);
+          sources.push({
+            type: "webrtc",
+            file: webrtcUrl,
+            label: "WebRTC (Ultra-Low Latency)",
+          });
+        } catch (urlError) {
+          console.error("Invalid WebRTC URL constructed:", webrtcUrl, urlError);
+          setError("Failed to construct valid WebRTC URL");
+          return;
+        }
+      }
+
+      if (sources.length === 0) {
+        setError("No valid streaming sources configured");
+        return;
       }
 
       console.log("Initializing player with sources:", sources);
@@ -217,21 +282,43 @@ const VideoPlayer = ({
         return;
       }
 
-      setIsPlayerReady(true);
+      setProtocolStatus((prev) => ({
+        ...prev,
+        hls: "active",
+        webrtc: "active",
+      }));
 
       // Set up event handlers
       playerRef.current.on("error", (error) => {
         console.error("Player error:", error);
-        setError(`Playback error: ${error.message || "Unknown error"}`);
 
-        // Update protocol status
+        // Handle specific error types with better messages
+        let errorMessage = "Unknown error";
+
         if (error.code === 1002) {
           // WebRTC error
           setProtocolStatus((prev) => ({ ...prev, webrtc: "failed" }));
+          errorMessage =
+            "WebRTC connection failed. Check if stream is active and WebRTC is properly configured.";
         } else if (error.code === 1001) {
           // HLS error
           setProtocolStatus((prev) => ({ ...prev, hls: "failed" }));
+          errorMessage =
+            "HLS playback failed. Check if stream is active and HLS endpoint is accessible.";
+        } else if (error.message && error.message.includes("404")) {
+          errorMessage =
+            "Stream not found. Make sure the stream is active and the Stream ID is correct.";
+        } else if (
+          error.message &&
+          error.message.includes("Connection reset")
+        ) {
+          errorMessage =
+            "Connection reset by server. This may indicate a configuration issue or the stream is not available.";
+        } else if (error.message) {
+          errorMessage = error.message;
         }
+
+        setError(`Playback error: ${errorMessage}`);
       });
 
       playerRef.current.on("stateChanged", (state) => {
@@ -276,10 +363,15 @@ const VideoPlayer = ({
         `Failed to initialize player: ${err.message || "Unknown error"}`
       );
     }
-  };
+  }, [
+    generatedStreamId,
+    generatedStreamKey,
+    preferredProtocol,
+    hlsSupported,
+    autoplay,
+  ]);
 
   const handleReloadPlayer = () => {
-    setIsPlayerReady(false);
     if (playerRef.current) {
       try {
         playerRef.current.remove();
@@ -301,6 +393,20 @@ const VideoPlayer = ({
       // Reload player with new protocol preference
       handleReloadPlayer();
     }
+  };
+
+  const handleTestStream = async () => {
+    if (!generatedStreamId) {
+      setStreamAvailability({
+        available: false,
+        error: "No stream ID provided",
+      });
+      return;
+    }
+
+    setStreamAvailability({ testing: true });
+    const result = await testStreamAvailability(generatedStreamId);
+    setStreamAvailability(result);
   };
 
   return (
@@ -466,6 +572,20 @@ const VideoPlayer = ({
             Reload Player
           </button>
           <button
+            onClick={handleTestStream}
+            style={{
+              padding: "10px 20px",
+              backgroundColor: "#2196F3",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+              marginRight: "10px",
+            }}
+          >
+            Test Stream
+          </button>
+          <button
             onClick={() => setShowStreamInfo(!showStreamInfo)}
             style={{
               padding: "10px 20px",
@@ -479,6 +599,36 @@ const VideoPlayer = ({
             {showStreamInfo ? "Hide Streaming Info" : "Show Streaming Info"}
           </button>
         </div>
+
+        {/* Stream Availability Display */}
+        {streamAvailability && (
+          <div
+            style={{
+              backgroundColor: streamAvailability.testing
+                ? "#fff3cd"
+                : streamAvailability.available
+                ? "#d4edda"
+                : "#f8d7da",
+              padding: "10px",
+              borderRadius: "4px",
+              marginBottom: "10px",
+              border: `1px solid ${
+                streamAvailability.testing
+                  ? "#ffeaa7"
+                  : streamAvailability.available
+                  ? "#c3e6cb"
+                  : "#f5c6cb"
+              }`,
+            }}
+          >
+            <strong>Stream Status:</strong>{" "}
+            {streamAvailability.testing
+              ? "Testing..."
+              : streamAvailability.available
+              ? "✓ Stream is available"
+              : `✗ ${streamAvailability.error || "Stream not available"}`}
+          </div>
+        )}
 
         {/* Protocol Status Display */}
         <div
@@ -572,6 +722,7 @@ const VideoPlayer = ({
             <p>
               <strong>WebRTC URL:</strong> ws://localhost:3333/app/
               {generatedStreamId}
+              {generatedStreamKey ? `?token=${generatedStreamKey}` : ""}
             </p>
             <p>
               <strong>HLS URL:</strong> /hls/app/{generatedStreamId}/llhls.m3u8
@@ -580,6 +731,7 @@ const VideoPlayer = ({
             <p>
               <strong>Direct HLS URL:</strong> http://localhost:8080/app/
               {generatedStreamId}/llhls.m3u8
+              {generatedStreamKey ? `?token=${generatedStreamKey}` : ""}
             </p>
 
             <div style={{ marginTop: "15px" }}>

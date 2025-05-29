@@ -12,7 +12,7 @@ services:
       - "8080:8080" # LL-HLS
       - "8081:8081" # API
     volumes:
-      - ./Server.xml:/opt/ovenmediaengine/Server.xml:ro
+      - ./Server.xml:/opt/ovenmediaengine/bin/origin_conf/Server.xml:ro
     networks:
       - streaming-network
     restart: unless-stopped

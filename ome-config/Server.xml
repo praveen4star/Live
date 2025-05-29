@@ -2,6 +2,18 @@
 <Server version="8" type="origin">
   <Name>OvenMediaEngine</Name>
 
+  <!-- API Server Configuration - REQUIRED for LL-HLS -->
+  <Managers>
+    <API>
+      <Enable>true</Enable>
+      <Port>8081</Port>
+      <WorkerCount>1</WorkerCount>
+      <CrossDomains>
+        <Url>*</Url>
+      </CrossDomains>
+    </API>
+  </Managers>
+
   <Hosts>
     <Host>
       <Name>default</Name>
@@ -25,6 +37,15 @@
               <Name>app</Name>
               <Type>live</Type>
               
+              <!-- RTMP Provider for ingest - REQUIRED -->
+              <Providers>
+                <RTMP>
+                  <Enable>true</Enable>
+                  <Port>1935</Port>
+                  <WorkerCount>1</WorkerCount>
+                </RTMP>
+              </Providers>
+              
               <Transcoder>
                 <Enable>true</Enable>
                 <Codec>
@@ -33,7 +54,8 @@
                       <Preset>faster</Preset>
                       <Profile>baseline</Profile>
                       <KeyFrameInterval>60</KeyFrameInterval>
-                      <CBR>true</CBR>
+                      <CBR>false</CBR>
+                      <BFrames>0</BFrames>
                     </H264>
                   </Video>
                   <Audio>
@@ -43,9 +65,15 @@
                       <Complexity>10</Complexity>
                       <Frame>20</Frame>
                     </Opus>
+                    <AAC>
+                      <Bitrate>128000</Bitrate>
+                      <Channel>2</Channel>
+                      <Samplerate>48000</Samplerate>
+                    </AAC>
                   </Audio>
                 </Codec>
                 <Streams>
+                  <!-- Bypass stream for original quality -->
                   <Stream>
                     <n>bypass_stream</n>
                     <Profiles>
@@ -60,11 +88,14 @@
                       </Profile>
                     </Profiles>
                   </Stream>
+                  
+                  <!-- ABR stream with multiple quality levels -->
                   <Stream>
-                    <n>transrate_stream</n>
+                    <n>abr_stream</n>
                     <Profiles>
+                      <!-- 720p profile for LL-HLS -->
                       <Profile>
-                        <n>video_profile</n>
+                        <n>720p</n>
                         <Video>
                           <Codec>H264</Codec>
                           <Width>1280</Width>
@@ -73,7 +104,25 @@
                           <Framerate>30</Framerate>
                         </Video>
                         <Audio>
-                          <Codec>Opus</Codec>
+                          <Codec>AAC</Codec>
+                          <Bitrate>128000</Bitrate>
+                          <Samplerate>48000</Samplerate>
+                          <Channel>2</Channel>
+                        </Audio>
+                      </Profile>
+                      
+                      <!-- 480p profile -->
+                      <Profile>
+                        <n>480p</n>
+                        <Video>
+                          <Codec>H264</Codec>
+                          <Width>854</Width>
+                          <Height>480</Height>
+                          <Bitrate>1200000</Bitrate>
+                          <Framerate>30</Framerate>
+                        </Video>
+                        <Audio>
+                          <Codec>AAC</Codec>
                           <Bitrate>128000</Bitrate>
                           <Samplerate>48000</Samplerate>
                           <Channel>2</Channel>
@@ -84,16 +133,19 @@
                 </Streams>
               </Transcoder>
 
-              <Publishers>
-                <RtmpPush>
-                  <Enable>true</Enable>
-                  <SocketAddrs>
-                    <SocketAddr>
-                      <Port>1935</Port>
-                    </SocketAddr>
-                  </SocketAddrs>
-                </RtmpPush>
+              <!-- Recording for VOD -->
+              <Recording>
+                <Enable>true</Enable>
+                <FilePath>/recordings</FilePath>
+                <InfoPath>/recordings</InfoPath>
+                <FileExtension>mp4</FileExtension>
+                <RecordingInterval>60000</RecordingInterval>
+                <Schedule>
+                  <Enabled>false</Enabled>
+                </Schedule>
+              </Recording>
 
+              <Publishers>
                 <WebRTC>
                   <Enable>true</Enable>
                   <Port>3333</Port>
@@ -110,16 +162,13 @@
 
                 <LLHLS>
                   <Enable>true</Enable>
+                  <Port>8080</Port>
                   <SegmentDuration>2</SegmentDuration>
                   <ChunkDuration>0.5</ChunkDuration>
                   <SegmentCount>5</SegmentCount>
                   <CrossDomains>
                     <Url>*</Url>
                   </CrossDomains>
-                  <StreamRelay>
-                    <Enabled>true</Enabled>
-                    <BindAddress>*:8080</BindAddress>
-                  </StreamRelay>
                 </LLHLS>
               </Publishers>
             </Application>
@@ -136,11 +185,22 @@
       </API>
     </Managers>
 
+    <Providers>
+      <RTMP>
+        <Port>1935</Port>
+        <WorkerCount>1</WorkerCount>
+      </RTMP>
+    </Providers>
+
     <Publishers>
       <LLHLS>
         <Port>8080</Port>
         <WorkerCount>2</WorkerCount>
       </LLHLS>
+      <WebRTC>
+        <Port>3333</Port>
+        <WorkerCount>1</WorkerCount>
+      </WebRTC>
     </Publishers>
 
     <WebRTC>
