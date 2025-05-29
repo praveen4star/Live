@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Video Debug Test</title>
+    <script src="https://unpkg.com/ovenplayer@0.10.20/dist/ovenplayer.js"></script>
+    <script src="https://unpkg.com/hls.js@latest/dist/hls.min.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        max-width: 1200px;
+        margin: 0 auto;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+      }
+      .player-container {
+        width: 100%;
+        height: 400px;
+        background: #000;
+        margin: 20px 0;
+      }
+      .controls {
+        margin: 20px 0;
+        padding: 15px;
+        background: #f9f9f9;
+        border-radius: 5px;
+      }
+      .control-group {
+        margin: 10px 0;
+      }
+      label {
+        display: inline-block;
+        width: 120px;
+        font-weight: bold;
+      }
+      input,
+      select,
+      button {
+        padding: 8px;
+        margin: 5px;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      button {
+        background: #007bff;
+        color: white;
+        cursor: pointer;
+        border: none;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      .status {
+        margin: 20px 0;
+        padding: 15px;
+        background: #e9ecef;
+        border-radius: 5px;
+        border-left: 4px solid #007bff;
+      }
+      .error {
+        border-left-color: #dc3545;
+        background: #f8d7da;
+        color: #721c24;
+      }
+      .success {
+        border-left-color: #28a745;
+        background: #d4edda;
+        color: #155724;
+      }
+      .log {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 10px;
+        max-height: 200px;
+        overflow-y: auto;
+        font-family: monospace;
+        font-size: 12px;
+        margin: 10px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Video Playback Debug Tool</h1>
+
+      <div class="controls">
+        <div class="control-group">
+          <label>Stream ID:</label>
+          <input type="text" id="streamId" value="test-stream" />
+          <button onclick="generateStreamId()">Generate Random</button>
+        </div>
+
+        <div class="control-group">
+          <label>Protocol:</label>
+          <select id="protocol">
+            <option value="auto">Auto (WebRTC → HLS)</option>
+            <option value="webrtc">WebRTC Only</option>
+            <option value="hls">HLS Only</option>
+          </select>
+        </div>
+
+        <div class="control-group">
+          <button onclick="initPlayer()">Initialize Player</button>
+          <button onclick="destroyPlayer()">Destroy Player</button>
+          <button onclick="testUrls()">Test URLs</button>
+          <button onclick="clearLog()">Clear Log</button>
+        </div>
+      </div>
+
+      <div class="status" id="status">
+        Ready to test. Enter a stream ID and click "Initialize Player".
+      </div>
+
+      <div class="player-container" id="player"></div>
+
+      <div class="log" id="log"></div>
+
+      <div style="margin-top: 20px">
+        <h3>Test URLs:</h3>
+        <div id="urls"></div>
+      </div>
+    </div>
+
+    <script>
+      let player = null;
+
+      function log(message, type = "info") {
+        const logDiv = document.getElementById("log");
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+        logDiv.textContent += logEntry;
+        logDiv.scrollTop = logDiv.scrollHeight;
+
+        console.log(logEntry);
+      }
+
+      function setStatus(message, type = "info") {
+        const statusDiv = document.getElementById("status");
+        statusDiv.textContent = message;
+        statusDiv.className = `status ${type}`;
+      }
+
+      function generateStreamId() {
+        const uuid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+          /[xy]/g,
+          function (c) {
+            const r = (Math.random() * 16) | 0;
+            const v = c === "x" ? r : (r & 0x3) | 0x8;
+            return v.toString(16);
+          }
+        );
+        document.getElementById("streamId").value = uuid;
+        updateUrls();
+      }
+
+      function updateUrls() {
+        const streamId = document.getElementById("streamId").value;
+        const urlsDiv = document.getElementById("urls");
+
+        urlsDiv.innerHTML = `
+                <p><strong>RTMP Ingest:</strong> rtmp://localhost:1935/app/${streamId}</p>
+                <p><strong>WebRTC:</strong> ws://localhost:3333/app/${streamId}</p>
+                <p><strong>HLS:</strong> http://localhost:8080/app/${streamId}/llhls.m3u8</p>
+            `;
+      }
+
+      function destroyPlayer() {
+        if (player) {
+          try {
+            player.remove();
+            log("Player destroyed successfully");
+          } catch (err) {
+            log(`Error destroying player: ${err.message}`, "error");
+          }
+          player = null;
+        }
+        setStatus("Player destroyed");
+      }
+
+      function initPlayer() {
+        const streamId = document.getElementById("streamId").value;
+        const protocol = document.getElementById("protocol").value;
+
+        if (!streamId) {
+          setStatus("Please enter a stream ID", "error");
+          return;
+        }
+
+        destroyPlayer();
+
+        log(
+          `Initializing player for stream: ${streamId}, protocol: ${protocol}`
+        );
+        setStatus("Initializing player...", "info");
+
+        // Build sources based on protocol selection
+        let sources = [];
+
+        if (protocol === "auto" || protocol === "hls") {
+          sources.push({
+            type: "hls",
+            file: `http://localhost:8080/app/${streamId}/llhls.m3u8`,
+            label: "LL-HLS",
+          });
+        }
+
+        if (protocol === "auto" || protocol === "webrtc") {
+          sources.push({
+            type: "webrtc",
+            file: `ws://localhost:3333/app/${streamId}`,
+            label: "WebRTC",
+          });
+        }
+
+        log(`Sources: ${JSON.stringify(sources, null, 2)}`);
+
+        try {
+          player = OvenPlayer.create("player", {
+            sources: sources,
+            autoStart: true,
+            controls: {
+              visible: true,
+              showPlayButton: true,
+              showMuteButton: true,
+              showVolumeButton: true,
+              showFullscreenButton: true,
+              showSettingsButton: true,
+            },
+            showBigPlayButton: true,
+            autoFallback: true,
+            webrtcConfig: {
+              timeoutMaxRetry: 3,
+              connectionTimeout: 15000,
+              iceServers: [
+                { urls: "stun:stun.l.google.com:19302" },
+                { urls: "stun:stun1.l.google.com:19302" },
+              ],
+              maxVideoBitrate: 5000000,
+              maxAudioBitrate: 128000,
+              videoRecvCodec: "H264",
+              audioRecvCodec: "OPUS",
+            },
+            lowLatencyModeHls: true,
+            hlsConfig: {
+              liveSyncDuration: 1.5,
+              liveMaxLatencyDuration: 6,
+              liveDurationInfinity: true,
+              enableWorker: true,
+            },
+            mute: false,
+            volume: 80,
+            debug: true,
+          });
+
+          // Event handlers
+          player.on("error", (error) => {
+            log(`Player error: ${JSON.stringify(error)}`, "error");
+            setStatus(`Error: ${error.message || "Unknown error"}`, "error");
+          });
+
+          player.on("stateChanged", (state) => {
+            log(`State changed: ${state}`);
+            if (state === "playing") {
+              const provider = player.getProviderName();
+              setStatus(`Playing via ${provider}`, "success");
+              log(`Provider: ${provider}`, "success");
+            }
+          });
+
+          player.on("sourceChanged", (source) => {
+            log(`Source changed: ${JSON.stringify(source)}`);
+            setStatus(`Using ${source.type} protocol`, "success");
+          });
+
+          player.on("ready", () => {
+            log("Player ready");
+          });
+
+          player.on("loading", () => {
+            log("Player loading");
+            setStatus("Loading stream...", "info");
+          });
+
+          log("Player initialized successfully");
+        } catch (err) {
+          log(`Failed to initialize player: ${err.message}`, "error");
+          setStatus(`Initialization failed: ${err.message}`, "error");
+        }
+
+        updateUrls();
+      }
+
+      async function testUrls() {
+        const streamId = document.getElementById("streamId").value;
+        if (!streamId) {
+          setStatus("Please enter a stream ID", "error");
+          return;
+        }
+
+        log("Testing URLs...");
+
+        // Test HLS URL
+        const hlsUrl = `http://localhost:8080/app/${streamId}/llhls.m3u8`;
+        try {
+          const response = await fetch(hlsUrl);
+          if (response.ok) {
+            log(`HLS URL accessible: ${hlsUrl}`, "success");
+          } else {
+            log(`HLS URL failed (${response.status}): ${hlsUrl}`, "error");
+          }
+        } catch (err) {
+          log(`HLS URL error: ${err.message}`, "error");
+        }
+
+        // Test WebRTC (just log the URL since we can't easily test WebSocket)
+        const webrtcUrl = `ws://localhost:3333/app/${streamId}`;
+        log(`WebRTC URL: ${webrtcUrl}`);
+
+        // Test OME API
+        try {
+          const apiResponse = await fetch(
+            "http://localhost:8081/v1/stats/current"
+          );
+          if (apiResponse.ok) {
+            const stats = await apiResponse.json();
+            log(
+              `OME API accessible. Stats: ${JSON.stringify(stats, null, 2)}`,
+              "success"
+            );
+          } else {
+            log(`OME API failed (${apiResponse.status})`, "error");
+          }
+        } catch (err) {
+          log(`OME API error: ${err.message}`, "error");
+        }
+      }
+
+      function clearLog() {
+        document.getElementById("log").textContent = "";
+      }
+
+      // Initialize on page load
+      document.addEventListener("DOMContentLoaded", () => {
+        generateStreamId();
+        log("Debug tool loaded");
+      });
+    </script>
+  </body>
+</html>

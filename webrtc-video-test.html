@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebRTC Video Track Test</title>
+    <script src="https://unpkg.com/ovenplayer@0.10.20/dist/ovenplayer.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+        background: #f5f5f5;
+      }
+      .container {
+        max-width: 800px;
+        margin: 0 auto;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+      }
+      .player-container {
+        width: 100%;
+        height: 400px;
+        background: #000;
+        margin: 20px 0;
+        border: 2px solid #ddd;
+      }
+      .controls {
+        margin: 20px 0;
+        padding: 15px;
+        background: #f9f9f9;
+        border-radius: 5px;
+      }
+      button {
+        padding: 10px 15px;
+        margin: 5px;
+        background: #007bff;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #0056b3;
+      }
+      .log {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        padding: 10px;
+        max-height: 300px;
+        overflow-y: auto;
+        font-family: monospace;
+        font-size: 12px;
+        margin: 10px 0;
+      }
+      .status {
+        padding: 10px;
+        margin: 10px 0;
+        border-radius: 4px;
+        font-weight: bold;
+      }
+      .status.success {
+        background: #d4edda;
+        color: #155724;
+      }
+      .status.error {
+        background: #f8d7da;
+        color: #721c24;
+      }
+      .status.warning {
+        background: #fff3cd;
+        color: #856404;
+      }
+      .video-info {
+        background: #e9ecef;
+        padding: 10px;
+        border-radius: 4px;
+        margin: 10px 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>WebRTC Video Track Debugging</h1>
+
+      <div class="controls">
+        <label>Stream ID: </label>
+        <input
+          type="text"
+          id="streamId"
+          value="test-stream"
+          style="padding: 8px; margin: 5px"
+        />
+        <button onclick="generateStreamId()">Generate Random</button>
+        <br /><br />
+        <button onclick="createPlayer()">Create Player</button>
+        <button onclick="destroyPlayer()">Destroy Player</button>
+        <button onclick="checkVideoTracks()">Check Video Tracks</button>
+        <button onclick="forceReload()">Force Reload</button>
+        <button onclick="clearLog()">Clear Log</button>
+      </div>
+
+      <div id="status" class="status">Ready to test</div>
+
+      <div class="player-container" id="player"></div>
+
+      <div class="video-info" id="videoInfo">
+        Video track information will appear here
+      </div>
+
+      <div class="log" id="log"></div>
+    </div>
+
+    <script>
+      let player = null;
+      let videoCheckInterval = null;
+
+      function log(message, type = "info") {
+        const logDiv = document.getElementById("log");
+        const timestamp = new Date().toLocaleTimeString();
+        const logEntry = `[${timestamp}] ${type.toUpperCase()}: ${message}\n`;
+        logDiv.textContent += logEntry;
+        logDiv.scrollTop = logDiv.scrollHeight;
+        console.log(logEntry);
+      }
+
+      function setStatus(message, type = "info") {
+        const statusDiv = document.getElementById("status");
+        statusDiv.textContent = message;
+        statusDiv.className = `status ${type}`;
+      }
+
+      function generateStreamId() {
+        const uuid = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+          /[xy]/g,
+          function (c) {
+            const r = (Math.random() * 16) | 0;
+            const v = c === "x" ? r : (r & 0x3) | 0x8;
+            return v.toString(16);
+          }
+        );
+        document.getElementById("streamId").value = uuid;
+      }
+
+      function updateVideoInfo() {
+        const videoInfoDiv = document.getElementById("videoInfo");
+        const videoElement = document.querySelector("#player video");
+
+        if (videoElement) {
+          const info = {
+            videoWidth: videoElement.videoWidth,
+            videoHeight: videoElement.videoHeight,
+            readyState: videoElement.readyState,
+            networkState: videoElement.networkState,
+            currentTime: videoElement.currentTime.toFixed(2),
+            duration: videoElement.duration,
+            paused: videoElement.paused,
+            muted: videoElement.muted,
+            volume: videoElement.volume,
+          };
+
+          videoInfoDiv.innerHTML = `
+                    <h4>Video Element Info:</h4>
+                    <p><strong>Dimensions:</strong> ${info.videoWidth} x ${
+            info.videoHeight
+          }</p>
+                    <p><strong>Ready State:</strong> ${
+                      info.readyState
+                    } (${getReadyStateText(info.readyState)})</p>
+                    <p><strong>Network State:</strong> ${
+                      info.networkState
+                    } (${getNetworkStateText(info.networkState)})</p>
+                    <p><strong>Current Time:</strong> ${info.currentTime}s</p>
+                    <p><strong>Duration:</strong> ${info.duration}</p>
+                    <p><strong>Paused:</strong> ${info.paused}</p>
+                    <p><strong>Muted:</strong> ${info.muted}</p>
+                    <p><strong>Volume:</strong> ${info.volume}</p>
+                `;
+
+          // Check for video track issues
+          if (info.videoWidth === 0 || info.videoHeight === 0) {
+            log(
+              "WARNING: Video dimensions are 0x0 - video track may be missing!",
+              "warning"
+            );
+            setStatus("Video track issue detected!", "warning");
+          } else {
+            log(
+              `Video track OK: ${info.videoWidth}x${info.videoHeight}`,
+              "success"
+            );
+          }
+        } else {
+          videoInfoDiv.innerHTML = "<p>No video element found</p>";
+          log("No video element found in player", "warning");
+        }
+      }
+
+      function getReadyStateText(state) {
+        const states = {
+          0: "HAVE_NOTHING",
+          1: "HAVE_METADATA",
+          2: "HAVE_CURRENT_DATA",
+          3: "HAVE_FUTURE_DATA",
+          4: "HAVE_ENOUGH_DATA",
+        };
+        return states[state] || "UNKNOWN";
+      }
+
+      function getNetworkStateText(state) {
+        const states = {
+          0: "NETWORK_EMPTY",
+          1: "NETWORK_IDLE",
+          2: "NETWORK_LOADING",
+          3: "NETWORK_NO_SOURCE",
+        };
+        return states[state] || "UNKNOWN";
+      }
+
+      function checkVideoTracks() {
+        log("Checking video tracks...");
+        updateVideoInfo();
+
+        if (player) {
+          try {
+            const provider = player.getProviderName();
+            const state = player.getState();
+            log(`Player provider: ${provider}, state: ${state}`);
+
+            // Try to get media stream info if available
+            const videoElement = document.querySelector("#player video");
+            if (videoElement && videoElement.srcObject) {
+              const stream = videoElement.srcObject;
+              const videoTracks = stream.getVideoTracks();
+              const audioTracks = stream.getAudioTracks();
+
+              log(
+                `Media stream tracks - Video: ${videoTracks.length}, Audio: ${audioTracks.length}`
+              );
+
+              videoTracks.forEach((track, index) => {
+                log(
+                  `Video track ${index}: enabled=${track.enabled}, readyState=${track.readyState}, kind=${track.kind}`
+                );
+              });
+
+              audioTracks.forEach((track, index) => {
+                log(
+                  `Audio track ${index}: enabled=${track.enabled}, readyState=${track.readyState}, kind=${track.kind}`
+                );
+              });
+            }
+          } catch (err) {
+            log(`Error checking tracks: ${err.message}`, "error");
+          }
+        } else {
+          log("No player instance available", "warning");
+        }
+      }
+
+      function destroyPlayer() {
+        if (videoCheckInterval) {
+          clearInterval(videoCheckInterval);
+          videoCheckInterval = null;
+        }
+
+        if (player) {
+          try {
+            log("Destroying player...");
+            player.off(); // Remove all event listeners
+            player.remove();
+            log("Player destroyed successfully");
+          } catch (err) {
+            log(`Error destroying player: ${err.message}`, "error");
+          }
+          player = null;
+        }
+
+        // Clear the container
+        document.getElementById("player").innerHTML = "";
+        document.getElementById("videoInfo").innerHTML = "Player destroyed";
+        setStatus("Player destroyed");
+      }
+
+      function createPlayer() {
+        const streamId = document.getElementById("streamId").value;
+        if (!streamId) {
+          setStatus("Please enter a stream ID", "error");
+          return;
+        }
+
+        destroyPlayer();
+
+        log(`Creating WebRTC player for stream: ${streamId}`);
+        setStatus("Creating player...", "info");
+
+        try {
+          player = OvenPlayer.create("player", {
+            sources: [
+              {
+                type: "webrtc",
+                file: `ws://localhost:3333/app/${streamId}`,
+                label: "WebRTC Test",
+              },
+            ],
+            autoStart: true,
+            controls: {
+              visible: true,
+              showPlayButton: true,
+              showMuteButton: true,
+              showVolumeButton: true,
+              showFullscreenButton: true,
+            },
+            showBigPlayButton: true,
+            webrtcConfig: {
+              timeoutMaxRetry: 3,
+              connectionTimeout: 15000,
+              iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+              videoRecvCodec: "H264",
+              audioRecvCodec: "OPUS",
+            },
+            mute: false,
+            volume: 80,
+            debug: true,
+          });
+
+          // Enhanced event handlers
+          player.on("error", (error) => {
+            log(`Player error: ${JSON.stringify(error)}`, "error");
+            setStatus(`Error: ${error.message}`, "error");
+          });
+
+          player.on("stateChanged", (state) => {
+            log(`State changed: ${state}`);
+            if (state === "playing") {
+              setStatus("Playing - checking video tracks...", "success");
+              setTimeout(checkVideoTracks, 1000);
+
+              // Start periodic video checking
+              if (videoCheckInterval) clearInterval(videoCheckInterval);
+              videoCheckInterval = setInterval(updateVideoInfo, 2000);
+            }
+          });
+
+          player.on("ready", () => {
+            log("Player ready");
+            setTimeout(checkVideoTracks, 500);
+          });
+
+          player.on("loading", () => {
+            log("Player loading");
+            setStatus("Loading...", "info");
+          });
+
+          // WebRTC specific events
+          player.on("connectionStateChanged", (state) => {
+            log(`WebRTC connection state: ${state}`);
+          });
+
+          player.on("iceConnectionStateChanged", (state) => {
+            log(`ICE connection state: ${state}`);
+          });
+
+          log("Player created successfully");
+        } catch (err) {
+          log(`Failed to create player: ${err.message}`, "error");
+          setStatus(`Creation failed: ${err.message}`, "error");
+        }
+      }
+
+      function forceReload() {
+        log("Force reloading player...");
+        const streamId = document.getElementById("streamId").value;
+        destroyPlayer();
+        setTimeout(() => {
+          createPlayer();
+        }, 1000);
+      }
+
+      function clearLog() {
+        document.getElementById("log").textContent = "";
+      }
+
+      // Initialize
+      document.addEventListener("DOMContentLoaded", () => {
+        generateStreamId();
+        log("WebRTC Video Test Tool loaded");
+      });
+    </script>
+  </body>
+</html>
