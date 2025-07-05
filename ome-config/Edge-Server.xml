@@ -1,0 +1,146 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Server version="8">
+  <Name>OvenMediaEngine-Edge</Name>
+  <!-- Host type (origin/edge) -->
+  <Type>edge</Type>
+  <!-- Specify IP address to bind (* means all IPs) -->
+  <IP>*</IP>
+  <PrivacyProtection>false</PrivacyProtection>
+  <StunServer>stun.ovenmediaengine.com:13478</StunServer>
+
+  <Modules>
+    <HTTP2>
+      <Enable>true</Enable>
+    </HTTP2>
+    <LLHLS>
+      <Enable>true</Enable>
+    </LLHLS>
+    <P2P>
+      <Enable>false</Enable>
+      <MaxClientPeersPerHostPeer>2</MaxClientPeersPerHostPeer>
+    </P2P>
+  </Modules>
+
+  <!-- Settings for the ports to bind -->
+  <Bind>
+    <!-- Disable API Server for now -->
+    <!--
+    <Managers>
+      <API>
+        <Port>8081</Port>
+        <WorkerCount>1</WorkerCount>
+      </API>
+    </Managers>
+    -->
+
+    <Providers>
+      <!-- Pull providers -->
+      <RTSPC>
+        <WorkerCount>1</WorkerCount>
+      </RTSPC>
+      <OVT>
+        <WorkerCount>1</WorkerCount>
+      </OVT>
+      <WebRTC>
+        <Signalling>
+          <Port>3333</Port>
+          <WorkerCount>1</WorkerCount>
+        </Signalling>
+        <IceCandidates>
+          <IceCandidate>*:10000-10004/udp</IceCandidate>
+          <TcpRelay>*:3478</TcpRelay>
+          <TcpForce>true</TcpForce>
+          <TcpRelayWorkerCount>1</TcpRelayWorkerCount>
+        </IceCandidates>
+      </WebRTC>
+    </Providers>
+
+    <Publishers>
+      <LLHLS>
+        <Port>8080</Port>
+        <WorkerCount>1</WorkerCount>
+      </LLHLS>
+      <WebRTC>
+        <Signalling>
+          <Port>3333</Port>
+          <WorkerCount>1</WorkerCount>
+        </Signalling>
+        <IceCandidates>
+          <IceCandidate>*:10000-10004/udp</IceCandidate>
+          <TcpRelay>*:3478</TcpRelay>
+          <TcpForce>true</TcpForce>
+          <TcpRelayWorkerCount>1</TcpRelayWorkerCount>
+        </IceCandidates>
+      </WebRTC>
+    </Publishers>
+  </Bind>
+
+  <VirtualHosts>
+    <VirtualHost>
+      <Name>default</Name>
+      <Distribution>ovenmediaengine.com</Distribution>
+      
+      <!-- Settings for multi ip/domain and TLS -->
+      <Host>
+        <Names>
+          <Name>*</Name>
+        </Names>
+        <TLS>
+          <CertPath>./cert.crt</CertPath>
+          <KeyPath>./cert.key</KeyPath>
+          <ChainCertPath>./cert.ca-bundle</ChainCertPath>
+        </TLS>
+      </Host>
+
+      <!-- Origin Map Store for Edge Server Discovery -->
+      <OriginMapStore>
+        <RedisServer>
+          <Host>redis:6379</Host>
+          <Auth></Auth>
+        </RedisServer>
+      </OriginMapStore>
+
+      <!-- Settings for applications -->
+      <Applications>
+        <Application>
+          <Name>app</Name>
+          <!-- Application type (live/vod) -->
+          <Type>live</Type>
+          
+          <!-- Providers -->
+          <Providers>
+            <!-- OVT Provider to pull streams from origin -->
+            <OVT />
+            <WebRTC>
+              <Timeout>30000</Timeout>
+              <CrossDomains>
+                <Url>*</Url>
+              </CrossDomains>
+            </WebRTC>
+          </Providers>
+
+          <!-- Publishers -->
+          <Publishers>
+            <AppWorkerCount>1</AppWorkerCount>
+            <StreamWorkerCount>8</StreamWorkerCount>
+            <WebRTC>
+              <Timeout>30000</Timeout>
+              <Rtx>false</Rtx>
+              <Ulpfec>false</Ulpfec>
+              <JitterBuffer>false</JitterBuffer>
+            </WebRTC>
+            <LLHLS>
+              <ChunkDuration>0.5</ChunkDuration>
+              <PartHoldBack>1.5</PartHoldBack>
+              <SegmentDuration>6</SegmentDuration>
+              <SegmentCount>10</SegmentCount>
+              <CrossDomains>
+                <Url>*</Url>
+              </CrossDomains>
+            </LLHLS>
+          </Publishers>
+        </Application>
+      </Applications>
+    </VirtualHost>
+  </VirtualHosts>
+</Server> 

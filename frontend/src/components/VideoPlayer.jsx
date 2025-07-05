@@ -8,7 +8,7 @@ window.Hls = Hls;
 
 /**
  * VideoPlayer component with adaptive playback using OvenPlayer
- * Supports both WebRTC and LL-HLS with automatic fallback
+ * Supports both WebRTC and LL-HLS with edge server selection
  */
 const VideoPlayer = ({
   streamId,
@@ -25,11 +25,36 @@ const VideoPlayer = ({
   const [showStreamInfo, setShowStreamInfo] = useState(false);
   const [hlsSupported] = useState(Hls.isSupported());
   const [preferredProtocol, setPreferredProtocol] = useState("hls"); // auto, hls, webrtc
+  const [selectedServer, setSelectedServer] = useState("origin"); // origin, edge1, edge2, auto
   const [protocolStatus, setProtocolStatus] = useState({
     hls: "unknown",
     webrtc: "unknown",
   });
   const [streamAvailability, setStreamAvailability] = useState(null);
+  const [serverStatus, setServerStatus] = useState({
+    origin: "unknown",
+    edge1: "unknown",
+    edge2: "unknown",
+  });
+
+  // Server configuration
+  const serverConfig = {
+    origin: {
+      name: "Origin Server",
+      hls: process.env.REACT_APP_ORIGIN_HLS_URL || "http://localhost:8080",
+      webrtc: process.env.REACT_APP_ORIGIN_WEBRTC_URL || "ws://localhost:3333",
+    },
+    edge1: {
+      name: "Edge Server 1",
+      hls: process.env.REACT_APP_EDGE1_HLS_URL || "http://localhost:8090",
+      webrtc: process.env.REACT_APP_EDGE1_WEBRTC_URL || "ws://localhost:3343",
+    },
+    edge2: {
+      name: "Edge Server 2",
+      hls: process.env.REACT_APP_EDGE2_HLS_URL || "http://localhost:8091",
+      webrtc: process.env.REACT_APP_EDGE2_WEBRTC_URL || "ws://localhost:3353",
+    },
+  };
 
   // Generate a random stream key
   const generateStreamKey = () => {
@@ -58,26 +83,69 @@ const VideoPlayer = ({
     return uuid;
   };
 
-  // Test if a stream is available
-  const testStreamAvailability = async (streamId) => {
+  // Test if a stream is available on a specific server
+  const testStreamAvailability = async (streamId, server = selectedServer) => {
     try {
-      const hlsUrl = `http://localhost:8080/app/${streamId}/llhls.m3u8`;
+      const config = serverConfig[server];
+      if (!config) {
+        return { available: false, error: "Invalid server configuration" };
+      }
+
+      const hlsUrl = `${config.hls}/app/${streamId}/llhls.m3u8`;
       const response = await fetch(hlsUrl, {
         method: "HEAD",
         timeout: 5000,
       });
 
       if (response.ok) {
-        return { available: true, protocol: "hls" };
+        return { available: true, protocol: "hls", server };
       } else if (response.status === 404) {
-        return { available: false, error: "Stream not found (404)" };
+        return { available: false, error: "Stream not found (404)", server };
       } else {
-        return { available: false, error: `HTTP ${response.status}` };
+        return { available: false, error: `HTTP ${response.status}`, server };
       }
     } catch (error) {
-      console.warn("Stream availability test failed:", error);
-      return { available: false, error: error.message };
+      console.warn(`Stream availability test failed for ${server}:`, error);
+      return { available: false, error: error.message, server };
     }
+  };
+
+  // Test all servers and find the best one
+  const findBestServer = async (streamId) => {
+    const servers = ["origin", "edge1", "edge2"];
+    const results = await Promise.all(
+      servers.map(async (server) => {
+        const result = await testStreamAvailability(streamId, server);
+        return { server, ...result };
+      })
+    );
+
+    // Update server status
+    const newServerStatus = {};
+    results.forEach((result) => {
+      newServerStatus[result.server] = result.available ? "active" : "failed";
+    });
+    console.log("newServerStatus", newServerStatus);
+    setServerStatus(newServerStatus);
+
+    // Find the first available server
+    const availableServer = results.find((result) => result.available);
+    return availableServer ? availableServer.server : "origin";
+  };
+
+  // Get the current server configuration
+  const getCurrentServerConfig = () => {
+    if (selectedServer === "auto") {
+      // For auto mode, prefer edge servers over origin
+      const availableServers = Object.entries(serverStatus)
+        .filter(([_, status]) => status === "active")
+        .map(([server]) => server);
+
+      if (availableServers.includes("edge1")) return serverConfig.edge1;
+      if (availableServers.includes("edge2")) return serverConfig.edge2;
+      return serverConfig.origin;
+    }
+    return serverConfig[selectedServer] || serverConfig.origin;
   };
 
   // Clean up player on unmount
@@ -114,7 +182,7 @@ const VideoPlayer = ({
 
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [generatedStreamId, preferredProtocol]); // Disable exhaustive deps to avoid circular dependency
+  }, [generatedStreamId, preferredProtocol, selectedServer]);
 
   const initializePlayer = useCallback(async () => {
     try {
@@ -137,11 +205,17 @@ const VideoPlayer = ({
         return;
       }
 
-      // Basic UUID validation for stream ID
-      const uuidRegex =
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-      if (!uuidRegex.test(generatedStreamId)) {
-        console.warn("Stream ID does not appear to be a valid UUID format");
+      // Auto-select best server if needed
+      let currentServer = selectedServer;
+      if (selectedServer === "auto") {
+        currentServer = await findBestServer(generatedStreamId);
+        console.log(`Auto-selected server: ${currentServer}`);
+      }
+
+      const config = serverConfig[currentServer];
+      if (!config) {
+        setError("Invalid server configuration");
+        return;
       }
 
       // Check if OvenPlayer is properly loaded
@@ -151,27 +225,18 @@ const VideoPlayer = ({
         return;
       }
 
-      // Verify Hls.js is available
-      if (!window.Hls) {
-        console.error("Hls.js is not properly loaded");
-        setError("HLS library not loaded properly");
-        return;
-      }
-
-      // Build sources array based on preferred protocol
+      // Build sources array based on preferred protocol and server
       let sources = [];
 
       if (preferredProtocol === "auto" || preferredProtocol === "hls") {
-        // Construct HLS URL properly - token should be a query parameter, not part of the path
-        const hlsUrl = `http://localhost:8080/app/${generatedStreamId}/llhls.m3u8`;
+        const hlsUrl = `${config.hls}/app/${generatedStreamId}/llhls.m3u8`;
 
-        // Validate URL construction
         try {
           new URL(hlsUrl);
           sources.push({
             type: "hls",
             file: hlsUrl,
-            label: "LL-HLS (Low Latency)",
+            label: `LL-HLS (${config.name})`,
           });
         } catch (urlError) {
           console.error("Invalid HLS URL constructed:", hlsUrl, urlError);
@@ -181,19 +246,17 @@ const VideoPlayer = ({
       }
 
       if (preferredProtocol === "auto" || preferredProtocol === "webrtc") {
-        // WebRTC URL construction - token can be part of stream name or query parameter
-        const webrtcBaseUrl = `ws://localhost:3333/app/${generatedStreamId}`;
+        const webrtcBaseUrl = `${config.webrtc}/app/${generatedStreamId}`;
         const webrtcUrl = generatedStreamKey
           ? `${webrtcBaseUrl}?token=${generatedStreamKey}`
           : webrtcBaseUrl;
 
-        // Validate WebRTC URL
         try {
           new URL(webrtcUrl);
           sources.push({
             type: "webrtc",
             file: webrtcUrl,
-            label: "WebRTC (Ultra-Low Latency)",
+            label: `WebRTC (${config.name})`,
           });
         } catch (urlError) {
           console.error("Invalid WebRTC URL constructed:", webrtcUrl, urlError);
@@ -208,9 +271,7 @@ const VideoPlayer = ({
       }
 
       console.log("Initializing player with sources:", sources);
-      console.log("Container element:", containerRef.current);
-      console.log("HLS support:", hlsSupported ? "Yes" : "No");
-      console.log("Preferred protocol:", preferredProtocol);
+      console.log("Using server:", config.name);
 
       // Remove existing player if there is one
       if (playerRef.current) {
@@ -222,7 +283,7 @@ const VideoPlayer = ({
         }
       }
 
-      // Initialize OvenPlayer with error handling
+      // Initialize OvenPlayer
       try {
         playerRef.current = OvenPlayer.create(containerRef.current, {
           sources: sources,
@@ -246,25 +307,24 @@ const VideoPlayer = ({
               { urls: "stun:stun.l.google.com:19302" },
               { urls: "stun:stun1.l.google.com:19302" },
             ],
-            maxVideoBitrate: 2500, // Ensure video bitrate is set
-            maxAudioBitrate: 128, // Audio bitrate
-            videoRecvCodec: "H264", // Explicitly specify video codec
-            preferredCodecProfile: "42e01f", // Baseline profile for better compatibility
-            iceTransportPolicy: "all", // Use all available ICE candidates
+            maxVideoBitrate: 2500,
+            maxAudioBitrate: 128,
+            videoRecvCodec: "H264",
+            preferredCodecProfile: "42e01f",
+            iceTransportPolicy: "all",
             rtcConfiguration: {
               bundlePolicy: "max-bundle",
               rtcpMuxPolicy: "require",
-              sdpSemantics: "unified-plan", // Better for modern browsers
-              encodedInsertableStreams: false, // Disable experimental features
+              sdpSemantics: "unified-plan",
+              encodedInsertableStreams: false,
             },
-            forceTurn: false, // Don't force TURN server usage
+            forceTurn: false,
             peerConnectionConfig: {
-              sdpSemantics: "unified-plan", // Ensure consistent setting
+              sdpSemantics: "unified-plan",
             },
           },
           lowLatencyModeHls: true,
           hlsConfig: {
-            // Enhanced HLS settings
             liveSyncDuration: 1.5,
             liveMaxLatencyDuration: 6,
             liveDurationInfinity: true,
@@ -272,9 +332,9 @@ const VideoPlayer = ({
             forceKeyFrameOnDiscontinuity: true,
             appendErrorMaxRetry: 3,
           },
-          mute: false, // Start unmuted to ensure audio works
-          volume: 80, // Start at 80% volume
-          debug: true, // Enable debugging
+          mute: false,
+          volume: 80,
+          debug: true,
         });
       } catch (err) {
         console.error("Error creating player instance:", err);
@@ -291,34 +351,7 @@ const VideoPlayer = ({
       // Set up event handlers
       playerRef.current.on("error", (error) => {
         console.error("Player error:", error);
-
-        // Handle specific error types with better messages
-        let errorMessage = "Unknown error";
-
-        if (error.code === 1002) {
-          // WebRTC error
-          setProtocolStatus((prev) => ({ ...prev, webrtc: "failed" }));
-          errorMessage =
-            "WebRTC connection failed. Check if stream is active and WebRTC is properly configured.";
-        } else if (error.code === 1001) {
-          // HLS error
-          setProtocolStatus((prev) => ({ ...prev, hls: "failed" }));
-          errorMessage =
-            "HLS playback failed. Check if stream is active and HLS endpoint is accessible.";
-        } else if (error.message && error.message.includes("404")) {
-          errorMessage =
-            "Stream not found. Make sure the stream is active and the Stream ID is correct.";
-        } else if (
-          error.message &&
-          error.message.includes("Connection reset")
-        ) {
-          errorMessage =
-            "Connection reset by server. This may indicate a configuration issue or the stream is not available.";
-        } else if (error.message) {
-          errorMessage = error.message;
-        }
-
-        setError(`Playback error: ${errorMessage}`);
+        handlePlayerError(error);
       });
 
       playerRef.current.on("stateChanged", (state) => {
@@ -336,24 +369,9 @@ const VideoPlayer = ({
       playerRef.current.on("sourceChanged", (source) => {
         console.log("Source changed to:", source);
         setCurrentProtocol(source.type);
-
-        // Update protocol status
-        if (source.type === "hls") {
-          setProtocolStatus((prev) => ({
-            ...prev,
-            hls: "active",
-            webrtc: preferredProtocol === "webrtc" ? "failed" : "inactive",
-          }));
-        } else if (source.type === "webrtc") {
-          setProtocolStatus((prev) => ({
-            ...prev,
-            webrtc: "active",
-            hls: preferredProtocol === "hls" ? "failed" : "inactive",
-          }));
-        }
+        updateProtocolStatus(source.type);
       });
 
-      // Handle stream end
       playerRef.current.on("complete", () => {
         console.log("Stream ended");
       });
@@ -367,9 +385,53 @@ const VideoPlayer = ({
     generatedStreamId,
     generatedStreamKey,
     preferredProtocol,
+    selectedServer,
     hlsSupported,
     autoplay,
   ]);
+
+  const handlePlayerError = (error) => {
+    let errorMessage = "Unknown error";
+
+    if (error.code === 1002) {
+      setProtocolStatus((prev) => ({ ...prev, webrtc: "failed" }));
+      errorMessage = "WebRTC connection failed. Trying edge servers...";
+
+      // Auto-fallback to edge servers
+      if (selectedServer === "origin") {
+        setSelectedServer("edge1");
+        return;
+      } else if (selectedServer === "edge1") {
+        setSelectedServer("edge2");
+        return;
+      }
+    } else if (error.code === 1001) {
+      setProtocolStatus((prev) => ({ ...prev, hls: "failed" }));
+      errorMessage = "HLS playback failed. Trying alternative servers...";
+    } else if (error.message && error.message.includes("404")) {
+      errorMessage = "Stream not found. Make sure the stream is active.";
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+
+    setError(`Playback error: ${errorMessage}`);
+  };
+
+  const updateProtocolStatus = (sourceType) => {
+    if (sourceType === "hls") {
+      setProtocolStatus((prev) => ({
+        ...prev,
+        hls: "active",
+        webrtc: preferredProtocol === "webrtc" ? "failed" : "inactive",
+      }));
+    } else if (sourceType === "webrtc") {
+      setProtocolStatus((prev) => ({
+        ...prev,
+        webrtc: "active",
+        hls: preferredProtocol === "hls" ? "failed" : "inactive",
+      }));
+    }
+  };
 
   const handleReloadPlayer = () => {
     if (playerRef.current) {
@@ -381,7 +443,6 @@ const VideoPlayer = ({
       playerRef.current = null;
     }
 
-    // Use timeout to ensure DOM updates
     setTimeout(() => {
       initializePlayer();
     }, 100);
@@ -390,7 +451,13 @@ const VideoPlayer = ({
   const handleProtocolChange = (protocol) => {
     setPreferredProtocol(protocol);
     if (playerRef.current) {
-      // Reload player with new protocol preference
+      handleReloadPlayer();
+    }
+  };
+
+  const handleServerChange = (server) => {
+    setSelectedServer(server);
+    if (playerRef.current) {
       handleReloadPlayer();
     }
   };
@@ -405,8 +472,34 @@ const VideoPlayer = ({
     }
 
     setStreamAvailability({ testing: true });
-    const result = await testStreamAvailability(generatedStreamId);
-    setStreamAvailability(result);
+
+    if (selectedServer === "auto") {
+      const bestServer = await findBestServer(generatedStreamId);
+      const result = await testStreamAvailability(
+        generatedStreamId,
+        bestServer
+      );
+      setStreamAvailability(result);
+    } else {
+      const result = await testStreamAvailability(
+        generatedStreamId,
+        selectedServer
+      );
+      setStreamAvailability(result);
+    }
+  };
+
+  const getCurrentServerName = () => {
+    if (selectedServer === "auto") {
+      const availableServers = Object.entries(serverStatus)
+        .filter(([_, status]) => status === "active")
+        .map(([server]) => server);
+
+      if (availableServers.includes("edge1")) return serverConfig.edge1.name;
+      if (availableServers.includes("edge2")) return serverConfig.edge2.name;
+      return serverConfig.origin.name;
+    }
+    return serverConfig[selectedServer]?.name || "Unknown Server";
   };
 
   return (
@@ -496,6 +589,76 @@ const VideoPlayer = ({
               }}
             >
               Generate
+            </button>
+          </div>
+        </div>
+
+        <div style={{ marginBottom: "15px" }}>
+          <label
+            style={{
+              display: "block",
+              marginBottom: "5px",
+              fontWeight: "bold",
+            }}
+          >
+            Server Selection:
+          </label>
+          <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+            <button
+              onClick={() => handleServerChange("auto")}
+              style={{
+                padding: "8px 15px",
+                backgroundColor:
+                  selectedServer === "auto" ? "#4CAF50" : "#f1f1f1",
+                color: selectedServer === "auto" ? "white" : "black",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              Auto Select
+            </button>
+            <button
+              onClick={() => handleServerChange("origin")}
+              style={{
+                padding: "8px 15px",
+                backgroundColor:
+                  selectedServer === "origin" ? "#4CAF50" : "#f1f1f1",
+                color: selectedServer === "origin" ? "white" : "black",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              Origin Server
+            </button>
+            <button
+              onClick={() => handleServerChange("edge1")}
+              style={{
+                padding: "8px 15px",
+                backgroundColor:
+                  selectedServer === "edge1" ? "#4CAF50" : "#f1f1f1",
+                color: selectedServer === "edge1" ? "white" : "black",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              Edge Server 1
+            </button>
+            <button
+              onClick={() => handleServerChange("edge2")}
+              style={{
+                padding: "8px 15px",
+                backgroundColor:
+                  selectedServer === "edge2" ? "#4CAF50" : "#f1f1f1",
+                color: selectedServer === "edge2" ? "white" : "black",
+                border: "none",
+                borderRadius: "4px",
+                cursor: "pointer",
+              }}
+            >
+              Edge Server 2
             </button>
           </div>
         </div>
@@ -625,10 +788,56 @@ const VideoPlayer = ({
             {streamAvailability.testing
               ? "Testing..."
               : streamAvailability.available
-              ? "✓ Stream is available"
-              : `✗ ${streamAvailability.error || "Stream not available"}`}
+              ? `✓ Stream is available on ${streamAvailability.server}`
+              : `✗ ${streamAvailability.error || "Stream not available"} on ${
+                  streamAvailability.server
+                }`}
           </div>
         )}
+
+        {/* Server Status Display */}
+        <div
+          style={{
+            backgroundColor: "#fff",
+            padding: "10px",
+            borderRadius: "4px",
+            marginBottom: "10px",
+            border: "1px solid #ddd",
+          }}
+        >
+          <h4 style={{ marginTop: 0 }}>Server Status</h4>
+          <div style={{ display: "flex", gap: "15px", flexWrap: "wrap" }}>
+            {Object.entries(serverConfig).map(([key, config]) => (
+              <div
+                key={key}
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "4px",
+                  backgroundColor:
+                    serverStatus[key] === "active"
+                      ? "#e6ffe6"
+                      : serverStatus[key] === "failed"
+                      ? "#ffe6e6"
+                      : "#f9f9f9",
+                  border: `1px solid ${
+                    serverStatus[key] === "active"
+                      ? "#4CAF50"
+                      : serverStatus[key] === "failed"
+                      ? "#ff6666"
+                      : "#ddd"
+                  }`,
+                }}
+              >
+                <span style={{ fontWeight: "bold" }}>{config.name}:</span>{" "}
+                {serverStatus[key] === "active"
+                  ? "Active ✓"
+                  : serverStatus[key] === "failed"
+                  ? "Failed ✗"
+                  : "Unknown"}
+              </div>
+            ))}
+          </div>
+        </div>
 
         {/* Protocol Status Display */}
         <div
@@ -713,29 +922,48 @@ const VideoPlayer = ({
           >
             <h4>Streaming Information</h4>
             <p>
-              <strong>RTMP URL:</strong> rtmp://localhost:1935/app
+              <strong>RTMP URL:</strong> rtmp://localhost:1935/app (Origin Only)
             </p>
             <p>
               <strong>Stream Name/Key:</strong> {generatedStreamId}?token=
               {generatedStreamKey}
             </p>
             <p>
-              <strong>WebRTC URL:</strong> ws://localhost:3333/app/
-              {generatedStreamId}
-              {generatedStreamKey ? `?token=${generatedStreamKey}` : ""}
-            </p>
-            <p>
-              <strong>HLS URL:</strong> /hls/app/{generatedStreamId}/llhls.m3u8
-              (Proxied)
-            </p>
-            <p>
-              <strong>Direct HLS URL:</strong> http://localhost:8080/app/
-              {generatedStreamId}/llhls.m3u8
-              {generatedStreamKey ? `?token=${generatedStreamKey}` : ""}
+              <strong>Current Server:</strong> {getCurrentServerName()}
             </p>
 
             <div style={{ marginTop: "15px" }}>
-              <h4>OBS Setup</h4>
+              <h5>Server URLs:</h5>
+              <ul style={{ paddingLeft: "20px" }}>
+                <li>
+                  <strong>Origin HLS:</strong> {serverConfig.origin.hls}/app/
+                  {generatedStreamId}/llhls.m3u8
+                </li>
+                <li>
+                  <strong>Edge 1 HLS:</strong> {serverConfig.edge1.hls}/app/
+                  {generatedStreamId}/llhls.m3u8
+                </li>
+                <li>
+                  <strong>Edge 2 HLS:</strong> {serverConfig.edge2.hls}/app/
+                  {generatedStreamId}/llhls.m3u8
+                </li>
+                <li>
+                  <strong>Origin WebRTC:</strong> {serverConfig.origin.webrtc}
+                  /app/{generatedStreamId}
+                </li>
+                <li>
+                  <strong>Edge 1 WebRTC:</strong> {serverConfig.edge1.webrtc}
+                  /app/{generatedStreamId}
+                </li>
+                <li>
+                  <strong>Edge 2 WebRTC:</strong> {serverConfig.edge2.webrtc}
+                  /app/{generatedStreamId}
+                </li>
+              </ul>
+            </div>
+
+            <div style={{ marginTop: "15px" }}>
+              <h4>OBS Setup (Stream to Origin)</h4>
               <ol style={{ paddingLeft: "20px" }}>
                 <li>Open OBS Studio</li>
                 <li>Go to Settings → Stream</li>
@@ -754,7 +982,7 @@ const VideoPlayer = ({
             </div>
 
             <div style={{ marginTop: "15px" }}>
-              <h4>FFmpeg Command</h4>
+              <h4>FFmpeg Command (Stream to Origin)</h4>
               <pre
                 style={{
                   backgroundColor: "#f9f9f9",
@@ -836,7 +1064,8 @@ const VideoPlayer = ({
               fontSize: "12px",
             }}
           >
-            {currentProtocol === "webrtc" ? "WebRTC" : "LL-HLS"}
+            {currentProtocol === "webrtc" ? "WebRTC" : "LL-HLS"} -{" "}
+            {getCurrentServerName()}
           </div>
         )}
       </div>

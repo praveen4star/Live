@@ -1,85 +1,134 @@
 version: "3.8"
 
 services:
-  ome:
-    image: airensoft/ovenmediaengine:latest
-    container_name: ome
+  # Redis for Origin-Edge coordination
+  redis:
+    image: redis:7-alpine
+    container_name: redis
     ports:
-      - "1935:1935" # RTMP
-      - "3333:3333" # WebRTC
-      - "3478:3478" # TURN/TCP relay
-      - "10000-10004:10000-10004/udp" # WebRTC UDP
-      - "8080:8080" # LL-HLS
-      - "8081:8081" # API
-    volumes:
-      - ./Server.xml:/opt/ovenmediaengine/bin/origin_conf/Server.xml:ro
+      - "6380:6379"
     networks:
       - streaming-network
+    volumes:
+      - redis_data:/data
     restart: unless-stopped
+
+  # Origin Server - handles ingestion and transcoding
+  origin-server:
+    image: airensoft/ovenmediaengine:0.15.9
+    container_name: origin-server
+    ports:
+      - "1935:1935" # RTMP ingestion
+      - "9000:9000" # OVT for edge communication
+      - "8081:8081" # API server
+      - "8080:8080" # LL-HLS (origin)
+      - "3333:3333" # WebRTC signaling (origin)
+      - "10000-10004:10000-10004/udp" # WebRTC media (origin)
+      - "3478:3478" # WebRTC TCP relay (origin)
+    volumes:
+      - ./ome-config/Origin-Server.xml:/opt/ovenmediaengine/bin/origin_conf/Server.xml
+      - ./vod:/opt/ovenmediaengine/bin/vod
+      - recordings:/recordings
+    networks:
+      - streaming-network
+    depends_on:
+      - redis
+    restart: unless-stopped
+    environment:
+      - OME_HOST_IP=0.0.0.0
+    command: /opt/ovenmediaengine/bin/OvenMediaEngine -c origin_conf
+
+  # Edge Server 1 - serves streams to viewers
+  edge-server-1:
+    image: airensoft/ovenmediaengine:0.15.9
+    container_name: edge-server-1
+    ports:
+      - "8082:8081" # API server (edge 1)
+      - "8090:8080" # LL-HLS (edge 1)
+      - "3343:3333" # WebRTC signaling (edge 1)
+      - "10010-10014:10000-10004/udp" # WebRTC media (edge 1)
+      - "3479:3478" # WebRTC TCP relay (edge 1)
+    volumes:
+      - ./ome-config/Edge-Server.xml:/opt/ovenmediaengine/bin/edge_conf/Server.xml
+    networks:
+      - streaming-network
+    depends_on:
+      - redis
+      - origin-server
+    restart: unless-stopped
+    environment:
+      - OME_HOST_IP=0.0.0.0
+    command: /opt/ovenmediaengine/bin/OvenMediaEngine -c edge_conf
+
+  # Edge Server 2 - additional edge for load balancing
+  edge-server-2:
+    image: airensoft/ovenmediaengine:0.15.9
+    container_name: edge-server-2
+    ports:
+      - "8083:8081" # API server (edge 2)
+      - "8091:8080" # LL-HLS (edge 2)
+      - "3353:3333" # WebRTC signaling (edge 2)
+      - "10020-10024:10000-10004/udp" # WebRTC media (edge 2)
+      - "3480:3478" # WebRTC TCP relay (edge 2)
+    volumes:
+      - ./ome-config/Edge-Server.xml:/opt/ovenmediaengine/bin/edge_conf/Server.xml
+    networks:
+      - streaming-network
+    depends_on:
+      - redis
+      - origin-server
+    restart: unless-stopped
+    environment:
+      - OME_HOST_IP=0.0.0.0
+    command: /opt/ovenmediaengine/bin/OvenMediaEngine -c edge_conf
+
+  # Backend API Server
   backend:
     build:
       context: .
       dockerfile: docker/backend.Dockerfile
+    container_name: backend
     ports:
-      - "3000:3000"
-    environment:
-      - NODE_ENV=production
-      - JWT_SECRET=your_jwt_secret_key_change_this_in_production
-      - OME_API_URL=http://ome:8081
-    depends_on:
-      - ome
+      - "3001:3001"
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
     networks:
       - streaming-network
+    depends_on:
+      - origin-server
     restart: unless-stopped
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
 
+  # Frontend React App
   frontend:
     build:
       context: .
       dockerfile: docker/frontend.Dockerfile
+    container_name: frontend
     ports:
-      - "8000:80"
-    depends_on:
-      - backend
-      - ome
-    networks:
-      - streaming-network
-    restart: unless-stopped
+      - "3000:80"
 
-  vod-uploader:
-    build:
-      context: .
-      dockerfile: docker/backend.Dockerfile
-    command: ["node", "src/services/vodUploader.js"]
-    environment:
-      - NODE_ENV=production
-      - STORAGE_TYPE=local
-      - LOCAL_VOD_PATH=/app/vod
-      - OME_RECORDS_PATH=/opt/ovenmediaengine/records
-      - BACKEND_API=http://backend:3000
-      # Uncomment and set these when ready to use Google Cloud Storage
-      # - STORAGE_TYPE=gcs
-      # - GOOGLE_APPLICATION_CREDENTIALS=/app/gcs-credentials.json
-      # - STORAGE_BUCKET=your-storage-bucket
-    volumes:
-      - ome-records:/opt/ovenmediaengine/records:ro
-      - vod-storage:/app/vod
-      # Create the VOD uploader script directly in the container
-      - ./backend/src/services/vodUploader.js:/app/src/services/vodUploader.js
-      # Uncomment when using GCS credentials
-      # - ./gcs-credentials.json:/app/gcs-credentials.json:ro
-    depends_on:
-      - ome
-      - backend
     networks:
       - streaming-network
+    depends_on:
+      - backend
     restart: unless-stopped
+    environment:
+      - REACT_APP_API_URL=http://localhost:3001
+      - REACT_APP_ORIGIN_HLS_URL=http://localhost:8080
+      - REACT_APP_ORIGIN_WEBRTC_URL=ws://localhost:3333
+      - REACT_APP_EDGE1_HLS_URL=http://localhost:8090
+      - REACT_APP_EDGE1_WEBRTC_URL=ws://localhost:3343
+      - REACT_APP_EDGE2_HLS_URL=http://localhost:8091
+      - REACT_APP_EDGE2_WEBRTC_URL=ws://localhost:3353
+
+volumes:
+  recordings:
+  redis_data:
 
 networks:
   streaming-network:
     driver: bridge
-
-volumes:
-  ome-records:
-    driver: local
-  vod-storage:
-    driver: local

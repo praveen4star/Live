@@ -1,0 +1,230 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Server version="8">
+  <Name>OvenMediaEngine-Origin</Name>
+  <!-- Host type (origin/edge) -->
+  <Type>origin</Type>
+  <!-- Specify IP address to bind (* means all IPs) -->
+  <IP>*</IP>
+  <PrivacyProtection>false</PrivacyProtection>
+  <StunServer>stun.ovenmediaengine.com:13478</StunServer>
+
+  <Modules>
+    <HTTP2>
+      <Enable>true</Enable>
+    </HTTP2>
+    <LLHLS>
+      <Enable>true</Enable>
+    </LLHLS>
+    <P2P>
+      <Enable>false</Enable>
+      <MaxClientPeersPerHostPeer>2</MaxClientPeersPerHostPeer>
+    </P2P>
+  </Modules>
+
+  <!-- Settings for the ports to bind -->
+  <Bind>
+    <!-- Disable API Server for now -->
+    <!--
+    <Managers>
+      <API>
+        <Port>8081</Port>
+        <WorkerCount>1</WorkerCount>
+      </API>
+    </Managers>
+    -->
+
+    <Providers>
+      <!-- Pull providers -->
+      <RTSPC>
+        <WorkerCount>1</WorkerCount>
+      </RTSPC>
+      <OVT>
+        <WorkerCount>1</WorkerCount>
+      </OVT>
+      <!-- Push providers -->
+      <RTMP>
+        <Port>1935</Port>
+        <WorkerCount>1</WorkerCount>
+      </RTMP>
+      <SRT>
+        <Port>9999</Port>
+        <WorkerCount>1</WorkerCount>
+      </SRT>
+      <WebRTC>
+        <Signalling>
+          <Port>3333</Port>
+          <WorkerCount>1</WorkerCount>
+        </Signalling>
+        <IceCandidates>
+          <IceCandidate>*:10000-10004/udp</IceCandidate>
+          <TcpRelay>*:3478</TcpRelay>
+          <TcpForce>true</TcpForce>
+          <TcpRelayWorkerCount>1</TcpRelayWorkerCount>
+        </IceCandidates>
+      </WebRTC>
+    </Providers>
+
+    <Publishers>
+      <!-- The OVT is protocol for ORIGIN-EDGE -->
+      <OVT>
+        <Port>9000</Port>
+        <WorkerCount>1</WorkerCount>
+      </OVT>
+      <LLHLS>
+        <Port>8080</Port>
+        <WorkerCount>1</WorkerCount>
+      </LLHLS>
+      <WebRTC>
+        <Signalling>
+          <Port>3333</Port>
+          <WorkerCount>1</WorkerCount>
+        </Signalling>
+        <IceCandidates>
+          <IceCandidate>*:10000-10004/udp</IceCandidate>
+          <TcpRelay>*:3478</TcpRelay>
+          <TcpForce>true</TcpForce>
+          <TcpRelayWorkerCount>1</TcpRelayWorkerCount>
+        </IceCandidates>
+      </WebRTC>
+    </Publishers>
+  </Bind>
+
+  <VirtualHosts>
+    <VirtualHost>
+      <Name>default</Name>
+      <Distribution>ovenmediaengine.com</Distribution>
+      
+      <!-- Settings for multi ip/domain and TLS -->
+      <Host>
+        <Names>
+          <Name>*</Name>
+        </Names>
+        <TLS>
+          <CertPath>./cert.crt</CertPath>
+          <KeyPath>./cert.key</KeyPath>
+          <ChainCertPath>./cert.ca-bundle</ChainCertPath>
+        </TLS>
+      </Host>
+
+      <!-- Origin Map Store for Edge Server Discovery -->
+      <OriginMapStore>
+        <RedisServer>
+          <Host>redis:6379</Host>
+          <Auth></Auth>
+        </RedisServer>
+        <!-- This registers the origin server hostname for edge discovery -->
+        <OriginHostName>origin-server</OriginHostName>
+      </OriginMapStore>
+
+      <!-- Settings for applications -->
+      <Applications>
+        <Application>
+          <Name>app</Name>
+          <!-- Application type (live/vod) -->
+          <Type>live</Type>
+          
+          <OutputProfiles>
+            <OutputProfile>
+              <Name>bypass_stream</Name>
+              <OutputStreamName>${OriginStreamName}</OutputStreamName>
+              <Encodes>
+                <Video>
+                  <Bypass>true</Bypass>
+                </Video>
+                <Audio>
+                  <Bypass>true</Bypass>
+                </Audio>
+              </Encodes>
+            </OutputProfile>
+            
+            <OutputProfile>
+              <Name>720p</Name>
+              <OutputStreamName>${OriginStreamName}_720p</OutputStreamName>
+              <Encodes>
+                <Video>
+                  <Codec>h264</Codec>
+                  <Width>1280</Width>
+                  <Height>720</Height>
+                  <Bitrate>2500000</Bitrate>
+                  <Framerate>30</Framerate>
+                  <KeyFrameInterval>30</KeyFrameInterval>
+                  <BFrames>0</BFrames>
+                  <Preset>faster</Preset>
+                  <Profile>main</Profile>
+                </Video>
+                <Audio>
+                  <Codec>aac</Codec>
+                  <Bitrate>128000</Bitrate>
+                  <Samplerate>48000</Samplerate>
+                  <Channel>2</Channel>
+                </Audio>
+              </Encodes>
+            </OutputProfile>
+            
+            <OutputProfile>
+              <Name>480p</Name>
+              <OutputStreamName>${OriginStreamName}_480p</OutputStreamName>
+              <Encodes>
+                <Video>
+                  <Codec>h264</Codec>
+                  <Width>854</Width>
+                  <Height>480</Height>
+                  <Bitrate>1200000</Bitrate>
+                  <Framerate>30</Framerate>
+                  <KeyFrameInterval>30</KeyFrameInterval>
+                  <BFrames>0</BFrames>
+                  <Preset>faster</Preset>
+                  <Profile>main</Profile>
+                </Video>
+                <Audio>
+                  <Codec>aac</Codec>
+                  <Bitrate>128000</Bitrate>
+                  <Samplerate>48000</Samplerate>
+                  <Channel>2</Channel>
+                </Audio>
+              </Encodes>
+            </OutputProfile>
+          </OutputProfiles>
+
+          <!-- Providers -->
+          <Providers>
+            <OVT />
+            <WebRTC>
+              <Timeout>30000</Timeout>
+              <CrossDomains>
+                <Url>*</Url>
+              </CrossDomains>
+            </WebRTC>
+            <RTMP />
+            <SRT />
+            <RTSPPull />
+          </Providers>
+
+          <!-- Publishers -->
+          <Publishers>
+            <AppWorkerCount>1</AppWorkerCount>
+            <StreamWorkerCount>8</StreamWorkerCount>
+            <!-- OVT Publisher for Edge Server Communication -->
+            <OVT />
+            <WebRTC>
+              <Timeout>30000</Timeout>
+              <Rtx>false</Rtx>
+              <Ulpfec>false</Ulpfec>
+              <JitterBuffer>false</JitterBuffer>
+            </WebRTC>
+            <LLHLS>
+              <OriginMode>true</OriginMode>
+              <ChunkDuration>0.5</ChunkDuration>
+              <PartHoldBack>1.5</PartHoldBack>
+              <SegmentDuration>6</SegmentDuration>
+              <SegmentCount>10</SegmentCount>
+              <CrossDomains>
+                <Url>*</Url>
+              </CrossDomains>
+            </LLHLS>
+          </Publishers>
+        </Application>
+      </Applications>
+    </VirtualHost>
+  </VirtualHosts>
+</Server> 
