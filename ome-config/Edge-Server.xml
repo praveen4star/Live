@@ -107,6 +107,93 @@
           <!-- Application type (live/vod) -->
           <Type>live</Type>
           
+          <OutputProfiles>
+            <OutputProfile>
+              <Name>bypass_stream</Name>
+              <OutputStreamName>${OriginStreamName}</OutputStreamName>
+              <Encodes>
+                <Video>
+                  <Bypass>true</Bypass>
+                </Video>
+                <Audio>
+                  <Bypass>true</Bypass>
+                </Audio>
+              </Encodes>
+            </OutputProfile>
+            
+            <OutputProfile>
+              <Name>720p</Name>
+              <OutputStreamName>${OriginStreamName}_720p</OutputStreamName>
+              <Encodes>
+                <Video>
+                  <Codec>h264</Codec>
+                  <Width>1280</Width>
+                  <Height>720</Height>
+                  <Bitrate>2500000</Bitrate>
+                  <Framerate>30</Framerate>
+                  <KeyFrameInterval>30</KeyFrameInterval>
+                  <BFrames>0</BFrames>
+                  <Preset>faster</Preset>
+                  <Profile>main</Profile>
+                </Video>
+                <Audio>
+                  <Codec>aac</Codec>
+                  <Bitrate>128000</Bitrate>
+                  <Samplerate>48000</Samplerate>
+                  <Channel>2</Channel>
+                </Audio>
+              </Encodes>
+            </OutputProfile>
+            
+            <OutputProfile>
+              <Name>480p</Name>
+              <OutputStreamName>${OriginStreamName}_480p</OutputStreamName>
+              <Encodes>
+                <Video>
+                  <Codec>h264</Codec>
+                  <Width>854</Width>
+                  <Height>480</Height>
+                  <Bitrate>1200000</Bitrate>
+                  <Framerate>30</Framerate>
+                  <KeyFrameInterval>30</KeyFrameInterval>
+                  <BFrames>0</BFrames>
+                  <Preset>faster</Preset>
+                  <Profile>main</Profile>
+                </Video>
+                <Audio>
+                  <Codec>aac</Codec>
+                  <Bitrate>128000</Bitrate>
+                  <Samplerate>48000</Samplerate>
+                  <Channel>2</Channel>
+                </Audio>
+              </Encodes>
+            </OutputProfile>
+            
+            <OutputProfile>
+              <Name>webrtc_profile</Name>
+              <OutputStreamName>${OriginStreamName}_webrtc</OutputStreamName>
+              <Encodes>
+                <Video>
+                  <Codec>h264</Codec>
+                  <Width>1280</Width>
+                  <Height>720</Height>
+                  <Bitrate>2000000</Bitrate>
+                  <Framerate>30</Framerate>
+                  <KeyFrameInterval>30</KeyFrameInterval>
+                  <BFrames>0</BFrames>
+                  <Preset>faster</Preset>
+                  <Profile>baseline</Profile>
+                </Video>
+                <Audio>
+                  <Codec>aac</Codec>
+                  <Bitrate>128000</Bitrate>
+                  <Samplerate>48000</Samplerate>
+                  <Channel>2</Channel>
+                </Audio>
+              </Encodes>
+            </OutputProfile>
+          </OutputProfiles>
+          
           <!-- Providers -->
           <Providers>
             <!-- OVT Provider to pull streams from origin -->
@@ -127,7 +214,7 @@
               <Timeout>30000</Timeout>
               <Rtx>false</Rtx>
               <Ulpfec>false</Ulpfec>
-              <JitterBuffer>false</JitterBuffer>
+              <JitterBuffer>true</JitterBuffer>
             </WebRTC>
             <LLHLS>
               <ChunkDuration>0.5</ChunkDuration>

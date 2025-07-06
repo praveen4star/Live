@@ -43,13 +43,13 @@ services:
     image: airensoft/ovenmediaengine:0.15.9
     container_name: edge-server-1
     ports:
-      - "8082:8081" # API server (edge 1)
-      - "8090:8080" # LL-HLS (edge 1)
-      - "3343:3333" # WebRTC signaling (edge 1)
-      - "10010-10014:10000-10004/udp" # WebRTC media (edge 1)
-      - "3479:3478" # WebRTC TCP relay (edge 1)
+      - "8082:8082" # API server (edge 1)
+      - "8090:8090" # LL-HLS (edge 1)
+      - "3343:3343" # WebRTC signaling (edge 1)
+      - "10010-10014:10010-10014/udp" # WebRTC media (edge 1)
+      - "3479:3479" # WebRTC TCP relay (edge 1)
     volumes:
-      - ./ome-config/Edge-Server.xml:/opt/ovenmediaengine/bin/edge_conf/Server.xml
+      - ./ome-config/Edge-Server-1.xml:/opt/ovenmediaengine/bin/edge_conf/Server.xml
     networks:
       - streaming-network
     depends_on:
@@ -65,13 +65,13 @@ services:
     image: airensoft/ovenmediaengine:0.15.9
     container_name: edge-server-2
     ports:
-      - "8083:8081" # API server (edge 2)
-      - "8091:8080" # LL-HLS (edge 2)
-      - "3353:3333" # WebRTC signaling (edge 2)
-      - "10020-10024:10000-10004/udp" # WebRTC media (edge 2)
-      - "3480:3478" # WebRTC TCP relay (edge 2)
+      - "8083:8083" # API server (edge 2)
+      - "8091:8091" # LL-HLS (edge 2)
+      - "3353:3353" # WebRTC signaling (edge 2)
+      - "10020-10024:10020-10024/udp" # WebRTC media (edge 2)
+      - "3480:3480" # WebRTC TCP relay (edge 2)
     volumes:
-      - ./ome-config/Edge-Server.xml:/opt/ovenmediaengine/bin/edge_conf/Server.xml
+      - ./ome-config/Edge-Server-2.xml:/opt/ovenmediaengine/bin/edge_conf/Server.xml
     networks:
       - streaming-network
     depends_on:

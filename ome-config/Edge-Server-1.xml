@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <Server version="8">
-  <Name>OvenMediaEngine-Origin</Name>
+  <Name>OvenMediaEngine-Edge-1</Name>
   <!-- Host type (origin/edge) -->
-  <Type>origin</Type>
+  <Type>edge</Type>
   <!-- Specify IP address to bind (* means all IPs) -->
   <IP>*</IP>
   <PrivacyProtection>false</PrivacyProtection>
@@ -27,7 +27,7 @@
     <!--
     <Managers>
       <API>
-        <Port>8081</Port>
+        <Port>8082</Port>
         <WorkerCount>1</WorkerCount>
       </API>
     </Managers>
@@ -41,23 +41,14 @@
       <OVT>
         <WorkerCount>1</WorkerCount>
       </OVT>
-      <!-- Push providers -->
-      <RTMP>
-        <Port>1935</Port>
-        <WorkerCount>1</WorkerCount>
-      </RTMP>
-      <SRT>
-        <Port>9999</Port>
-        <WorkerCount>1</WorkerCount>
-      </SRT>
       <WebRTC>
         <Signalling>
-          <Port>3333</Port>
+          <Port>3343</Port>
           <WorkerCount>1</WorkerCount>
         </Signalling>
         <IceCandidates>
-          <IceCandidate>*:10000-10004/udp</IceCandidate>
-          <TcpRelay>*:3478</TcpRelay>
+          <IceCandidate>*:10010-10014/udp</IceCandidate>
+          <TcpRelay>*:3479</TcpRelay>
           <TcpForce>true</TcpForce>
           <TcpRelayWorkerCount>1</TcpRelayWorkerCount>
         </IceCandidates>
@@ -65,23 +56,18 @@
     </Providers>
 
     <Publishers>
-      <!-- The OVT is protocol for ORIGIN-EDGE -->
-      <OVT>
-        <Port>9000</Port>
-        <WorkerCount>1</WorkerCount>
-      </OVT>
       <LLHLS>
-        <Port>8080</Port>
+        <Port>8090</Port>
         <WorkerCount>1</WorkerCount>
       </LLHLS>
       <WebRTC>
         <Signalling>
-          <Port>3333</Port>
+          <Port>3343</Port>
           <WorkerCount>1</WorkerCount>
         </Signalling>
         <IceCandidates>
-          <IceCandidate>*:10000-10004/udp</IceCandidate>
-          <TcpRelay>*:3478</TcpRelay>
+          <IceCandidate>*:10010-10014/udp</IceCandidate>
+          <TcpRelay>*:3479</TcpRelay>
           <TcpForce>true</TcpForce>
           <TcpRelayWorkerCount>1</TcpRelayWorkerCount>
         </IceCandidates>
@@ -112,8 +98,6 @@
           <Host>redis:6379</Host>
           <Auth></Auth>
         </RedisServer>
-        <!-- This registers the origin server hostname for edge discovery -->
-        <OriginHostName>origin-server</OriginHostName>
       </OriginMapStore>
 
       <!-- Settings for applications -->
@@ -209,9 +193,10 @@
               </Encodes>
             </OutputProfile>
           </OutputProfiles>
-
+          
           <!-- Providers -->
           <Providers>
+            <!-- OVT Provider to pull streams from origin -->
             <OVT />
             <WebRTC>
               <Timeout>30000</Timeout>
@@ -219,17 +204,12 @@
                 <Url>*</Url>
               </CrossDomains>
             </WebRTC>
-            <RTMP />
-            <SRT />
-            <RTSPPull />
           </Providers>
 
           <!-- Publishers -->
           <Publishers>
             <AppWorkerCount>1</AppWorkerCount>
             <StreamWorkerCount>8</StreamWorkerCount>
-            <!-- OVT Publisher for Edge Server Communication -->
-            <OVT />
             <WebRTC>
               <Timeout>30000</Timeout>
               <Rtx>false</Rtx>
@@ -237,7 +217,6 @@
               <JitterBuffer>true</JitterBuffer>
             </WebRTC>
             <LLHLS>
-              <OriginMode>true</OriginMode>
               <ChunkDuration>0.5</ChunkDuration>
               <PartHoldBack>1.5</PartHoldBack>
               <SegmentDuration>6</SegmentDuration>
