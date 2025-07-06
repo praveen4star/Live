@@ -214,7 +214,7 @@
               <Timeout>30000</Timeout>
               <Rtx>false</Rtx>
               <Ulpfec>false</Ulpfec>
-              <JitterBuffer>true</JitterBuffer>
+              <JitterBuffer>false</JitterBuffer>
             </WebRTC>
             <LLHLS>
               <ChunkDuration>0.5</ChunkDuration>
