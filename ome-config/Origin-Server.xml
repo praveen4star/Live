@@ -129,10 +129,28 @@
               <OutputStreamName>${OriginStreamName}</OutputStreamName>
               <Encodes>
                 <Video>
+                  <Name>bypass_video</Name>
                   <Bypass>true</Bypass>
                 </Video>
                 <Audio>
-                  <Bypass>true</Bypass>
+                  <Name>aac_audio</Name>
+                  <Codec>aac</Codec>
+                  <Bitrate>128000</Bitrate>
+                  <Samplerate>48000</Samplerate>
+                  <Channel>2</Channel>
+                  <BypassIfMatch>
+                    <Codec>eq</Codec>
+                  </BypassIfMatch>
+                </Audio>								
+                <Audio>
+                  <Name>opus_audio</Name>
+                  <Codec>opus</Codec>
+                  <Bitrate>128000</Bitrate>
+                  <Samplerate>48000</Samplerate>
+                  <Channel>2</Channel>
+                  <BypassIfMatch>
+                    <Codec>eq</Codec>
+                  </BypassIfMatch>									
                 </Audio>
               </Encodes>
             </OutputProfile>
@@ -210,7 +228,7 @@
               <Timeout>30000</Timeout>
               <Rtx>false</Rtx>
               <Ulpfec>false</Ulpfec>
-              <JitterBuffer>true</JitterBuffer>
+              <JitterBuffer>false</JitterBuffer>
             </WebRTC>
             <LLHLS>
               <OriginMode>true</OriginMode>
